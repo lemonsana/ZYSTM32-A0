@@ -3,69 +3,284 @@
 #include "motor.h"
 #include "stm32f10x.h"
 
-/* ==================== 循迹模块（v2 非阻塞版） ====================
- *
- *  硬件（板载固定）：
- *    右循迹探头  PA7 (丝印 IO3)
- *    左循迹探头  PB0 (丝印 IO4)
- *    电平定义：  BLACK_AREA = 1（压到黑线）  WHITE_AREA = 0（白底）
- *
- *  控制策略（v2 改为 10ms 一拍、不阻塞）：
- *    两个探头中间夹着黑线 → 直行
- *    左探头压黑          → 左轮慢、右轮快（左转，把车头拉回线上）
- *    右探头压黑          → 左轮快、右轮慢（右转）
- *    两个都压黑          → 十字/横线，按 TRACK_CROSS_STRAIGHT 决定直行冲过还是停车
- *
- *  ★ 可调参数都在下面这个宏块里，调车时只改这里。
- * ============================================================== */
+/* ============================================================================
+ *  循迹模块  v2.1
+ *  --------------------------------------------------------------------------
+ *  LINE_USE_GRAY = 1  →  感为 8 路灰度（软件 I2C，PB10=SCL / PB11=SDA）
+ *  LINE_USE_GRAY = 0  →  原来的两路红外探头（PA7=右 / PB0=左）
+ * ========================================================================== */
 
-#define TRACK_SPEED           55    /* 直行基础速度 */
-#define TRACK_TURN_OUTER      80    /* 转弯外侧轮（快） */
-#define TRACK_TURN_INNER       0    /* 转弯内侧轮（0=原地转；调到 20~30 可边走边转） */
+#if LINE_USE_GRAY
+/* ======================= 方案一：感为 8 路灰度 ======================= */
 
-#define TRACK_CROSS_STRAIGHT   1    /* 双探头都压黑时：1=直行冲过去，0=停车 */
+/* 数字量极性：
+ *   0 = bit 为 1 表示"白"（黑线时该位为 0）—— 感为资料里的约定
+ *   1 = bit 为 1 表示"黑"
+ * 如果实测方向反了（车往线的反方向修正），把这个宏改一下即可。 */
+#define GRAY_BIT_BLACK_IS_1   0
 
-/* 初始化：两路循迹探头配置为上拉输入 */
+/* ---------------- 软件 I2C 底层（开漏输出） ---------------- */
+static void IIC_Delay(void)
+{
+    delay_us(2);        /* 约 100kHz；模块不稳时把 2 改大一点 */
+}
+
+static void IIC_Start(void)
+{
+    GRAY_SDA_SET;    IIC_Delay();
+    GRAY_SCL_SET;    IIC_Delay();
+    GRAY_SDA_RESET;  IIC_Delay();
+    GRAY_SCL_RESET;  IIC_Delay();
+}
+
+static void IIC_Stop(void)
+{
+    GRAY_SDA_RESET;  IIC_Delay();
+    GRAY_SCL_SET;    IIC_Delay();
+    GRAY_SDA_SET;    IIC_Delay();
+}
+
+/* 发 1 字节，返回应答：0 = 从机 ACK，1 = 无应答 */
+static u8 IIC_WriteByte(u8 dat)
+{
+    u8 i, ack;
+
+    for (i = 0; i < 8; i++)
+    {
+        GRAY_SCL_RESET;  IIC_Delay();
+        if (dat & 0x80)  GRAY_SDA_SET;
+        else             GRAY_SDA_RESET;
+        IIC_Delay();
+        GRAY_SCL_SET;    IIC_Delay();
+        dat <<= 1;
+    }
+
+    GRAY_SCL_RESET;  IIC_Delay();
+    GRAY_SDA_SET;    IIC_Delay();      /* 释放 SDA，等从机应答 */
+    GRAY_SCL_SET;    IIC_Delay();
+    ack = GRAY_SDA_READ;               /* 0 = ACK */
+    GRAY_SCL_RESET;  IIC_Delay();
+
+    return ack;
+}
+
+/* 读 1 字节；ack：0 = 给应答(还要继续读)，1 = 不应答(最后一个字节) */
+static u8 IIC_ReadByte(u8 ack)
+{
+    u8 i, dat = 0;
+
+    GRAY_SDA_SET;    IIC_Delay();      /* 释放 SDA，作为输入 */
+    for (i = 0; i < 8; i++)
+    {
+        GRAY_SCL_RESET;  IIC_Delay();
+        GRAY_SCL_SET;    IIC_Delay();
+        dat <<= 1;
+        if (GRAY_SDA_READ) dat |= 0x01;
+    }
+
+    GRAY_SCL_RESET;  IIC_Delay();
+    if (ack) GRAY_SDA_SET;  else GRAY_SDA_RESET;
+    IIC_Delay();
+    GRAY_SCL_SET;    IIC_Delay();
+    GRAY_SCL_RESET;  IIC_Delay();
+    GRAY_SDA_SET;
+
+    return dat;
+}
+
+/* 读单个寄存器：写寄存器地址 → 重复起始 → 读 1 字节 */
+static u8 IIC_ReadReg(u8 reg)
+{
+    u8 dat;
+
+    IIC_Start();
+    if (IIC_WriteByte((u8)(GRAY_I2C_ADDR << 1)))        { IIC_Stop(); return 0xFF; }
+    if (IIC_WriteByte(reg))                              { IIC_Stop(); return 0xFF; }
+
+    IIC_Start();
+    if (IIC_WriteByte((u8)((GRAY_I2C_ADDR << 1) | 1)))   { IIC_Stop(); return 0xFF; }
+
+    dat = IIC_ReadByte(1);      /* 最后 1 字节，回 NACK */
+    IIC_Stop();
+
+    return dat;
+}
+
+/* 连续读寄存器：从 reg 开始读 len 个字节 */
+static u8 IIC_ReadRegs(u8 reg, u8 *buf, u8 len)
+{
+    u8 i;
+
+    IIC_Start();
+    if (IIC_WriteByte((u8)(GRAY_I2C_ADDR << 1)))         { IIC_Stop(); return 0; }
+    if (IIC_WriteByte(reg))                               { IIC_Stop(); return 0; }
+
+    IIC_Start();
+    if (IIC_WriteByte((u8)((GRAY_I2C_ADDR << 1) | 1)))    { IIC_Stop(); return 0; }
+
+    for (i = 0; i < len; i++)
+    {
+        buf[i] = IIC_ReadByte((i == (u8)(len - 1)) ? 1 : 0);
+    }
+    IIC_Stop();
+
+    return 1;
+}
+
+/* ---------------- 模块状态 ---------------- */
+static u8  gray_online = 0;      /* 1 = 模块在线 */
+static u8  gray_bits   = 0;      /* 最近一次读到的 8 位数字量 */
+static int gray_error  = 999;    /* 本周期线位置误差；999 = 丢线 */
+static int last_error  = 0;      /* 上一次有效误差（丢线时用来决定往哪找） */
+static u16 lost_ms     = 0;      /* 已丢线时间 */
+
+/* 探头位置权重：bit0 = 探头1（最右）→ +350 …… bit7 = 探头8（最左）→ -350 */
+static const int probe_pos[8] = { 350, 250, 150, 50, -50, -150, -250, -350 };
+
+/* ---------------- 对外调试接口 ---------------- */
+u8 Gray_Ping(void)
+{
+    return (IIC_ReadReg(GW_GRAY_PING) == GW_GRAY_PING_OK) ? 0 : 1;
+}
+
+u8 Gray_ReadDigital(void)
+{
+    return IIC_ReadReg(GW_GRAY_DIGITAL_MODE);
+}
+
+u8 Gray_ReadAnalog(u8 *buf8)
+{
+    return IIC_ReadRegs(GW_GRAY_ANALOG_BASE, buf8, 8);
+}
+
+u8  Gray_GetBits(void)    { return gray_bits; }
+u8  Gray_IsOnline(void)   { return gray_online; }
+int Gray_GetError(void)   { return gray_error; }
+
+/* ---------------- 读一次并算出误差 ---------------- */
+static void Gray_Update(void)
+{
+    u8  i, black_mask;
+    u8  cnt = 0;
+    int sum = 0;
+
+    gray_bits = Gray_ReadDigital();
+
+#if GRAY_BIT_BLACK_IS_1
+    black_mask = gray_bits;                 /* bit=1 表示黑 */
+#else
+    black_mask = (u8)(~gray_bits);          /* bit=1 表示白 → 取反得黑 */
+#endif
+
+    for (i = 0; i < 8; i++)
+    {
+        if (black_mask & (1 << i))
+        {
+            sum += probe_pos[i];
+            cnt++;
+        }
+    }
+
+    if (cnt == 0)  gray_error = 999;        /* 一个探头都没压到黑线 → 丢线 */
+    else           gray_error = sum / cnt;  /* 黑线重心位置 */
+}
+
+/* ---------------- 初始化 ---------------- */
+void IRSearchInit(void)
+{
+    GPIO_InitTypeDef  GPIO_InitStructure;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+
+    GPIO_InitStructure.GPIO_Pin   = GRAY_SCL_PIN | GRAY_SDA_PIN;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD;     /* 开漏，靠模块上拉 */
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+    GRAY_SCL_SET;
+    GRAY_SDA_SET;
+    delay_ms(5);                        /* 等模块上电稳定 */
+
+    gray_online = (Gray_Ping() == 0) ? 1 : 0;
+}
+
+/* ---------------- 循迹任务：每 10ms 调用一次 ---------------- */
+void SearchRun(void)
+{
+    int steer, left, right;
+
+    Gray_Update();
+
+    /* ---- 丢线处理 ---- */
+    if (gray_error == 999)
+    {
+        lost_ms += 10;
+        if (lost_ms > LINE_LOST_STOP_MS)
+        {
+            Motor_Stop();                       /* 找太久还没找到 → 停车 */
+            return;
+        }
+        if (last_error >= 0) Motor_SetSpeed( 70, -20);   /* 向右找 */
+        else                 Motor_SetSpeed(-20,  70);   /* 向左找 */
+        return;
+    }
+
+    lost_ms = 0;
+
+    /* ---- PD 控制 ---- */
+    steer = (LINE_KP * gray_error) / 100
+          + (LINE_KD * (gray_error - last_error)) / 100;
+
+    last_error = gray_error;
+
+    left  = LINE_BASE_SPEED + steer;
+    right = LINE_BASE_SPEED - steer;
+
+    if (left  >  100) left  =  100;
+    if (left  < -100) left  = -100;
+    if (right >  100) right =  100;
+    if (right < -100) right = -100;
+
+    Motor_SetSpeed(left, right);
+}
+
+#else
+/* ======================= 方案二：两路红外探头 ======================= */
+
+#define TRACK_SPEED           55
+#define TRACK_TURN_OUTER      80
+#define TRACK_TURN_INNER       0
+#define TRACK_CROSS_STRAIGHT   1
+
 void IRSearchInit(void)
 {
     GPIO_InitTypeDef  GPIO_InitStructure;
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA|RCC_APB2Periph_GPIOB , ENABLE);
 
-    GPIO_InitStructure.GPIO_Pin   = SEARCH_R_PIN;      /* PA7 右循迹 */
+    GPIO_InitStructure.GPIO_Pin   = SEARCH_R_PIN;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(SEARCH_R_GPIO, &GPIO_InitStructure);
 
-    GPIO_InitStructure.GPIO_Pin   = SEARCH_L_PIN;      /* PB0 左循迹 */
+    GPIO_InitStructure.GPIO_Pin   = SEARCH_L_PIN;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(SEARCH_L_GPIO, &GPIO_InitStructure);
 }
 
-/* 循迹任务：主循环每 10ms 调用一次，读一次探头、给一次速度，立即返回 */
 void SearchRun(void)
 {
-    u8 left  = SEARCH_L_IO;     /* 左探头电平 */
-    u8 right = SEARCH_R_IO;     /* 右探头电平 */
+    u8 left  = SEARCH_L_IO;
+    u8 right = SEARCH_R_IO;
 
     if (left == WHITE_AREA && right == WHITE_AREA)
-    {
-        /* 线在两探头中间：直行 */
         Motor_SetSpeed(TRACK_SPEED, TRACK_SPEED);
-    }
     else if (left == BLACK_AREA && right == WHITE_AREA)
-    {
-        /* 线偏左：向左修正（左轮慢、右轮快） */
         Motor_SetSpeed(TRACK_TURN_INNER, TRACK_TURN_OUTER);
-    }
     else if (left == WHITE_AREA && right == BLACK_AREA)
-    {
-        /* 线偏右：向右修正（左轮快、右轮慢） */
         Motor_SetSpeed(TRACK_TURN_OUTER, TRACK_TURN_INNER);
-    }
     else
     {
-        /* 两探头都压黑：十字路口 / 横线 / 掉出赛道 */
 #if TRACK_CROSS_STRAIGHT
         Motor_SetSpeed(TRACK_SPEED, TRACK_SPEED);
 #else
@@ -73,3 +288,13 @@ void SearchRun(void)
 #endif
     }
 }
+
+/* 方案二没有灰度传感器，调试接口给固定值 */
+u8  Gray_Ping(void)          { return 1; }
+u8  Gray_ReadDigital(void)   { return 0; }
+u8  Gray_ReadAnalog(u8 *b)   { (void)b; return 0; }
+u8  Gray_GetBits(void)       { return 0; }
+u8  Gray_IsOnline(void)      { return 0; }
+int Gray_GetError(void)      { return 999; }
+
+#endif
