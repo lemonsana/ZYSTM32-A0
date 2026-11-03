@@ -4,158 +4,55 @@
 #include "stm32f10x.h"
 
 /* ============================================================================
- *  循迹模块  v2.1
+ *  循迹模块  v2.2
  *  --------------------------------------------------------------------------
- *  LINE_USE_GRAY = 1  →  感为 8 路灰度（软件 I2C，PB10=SCL / PB11=SDA）
+ *  LINE_USE_GRAY = 1  →  感为 8 路灰度（串行 CLK/DAT：PB10=CLK / PB11=DAT）
  *  LINE_USE_GRAY = 0  →  原来的两路红外探头（PA7=右 / PB0=左）
  * ========================================================================== */
 
 #if LINE_USE_GRAY
-/* ======================= 方案一：感为 8 路灰度 ======================= */
+/* ======================= 方案一：感为 8 路灰度（串行） =======================
+ *
+ * 读取时序（照抄厂家 Serial 例程）：
+ *     CLK 拉低 → 延时 2us → 读 DAT（bit0 先出）→ CLK 拉高 → 延时 5us
+ * 重复 8 次即得 8 位数字量。
+ * ========================================================================== */
 
 /* 数字量极性：
- *   0 = bit 为 1 表示"白"（黑线时该位为 0）—— 感为资料里的约定
+ *   0 = bit 为 1 表示"白"（黑线时该位为 0）—— 厂家资料里的约定
  *   1 = bit 为 1 表示"黑"
- * 如果实测方向反了（车往线的反方向修正），把这个宏改一下即可。 */
+ * 如果实测车往线的反方向修正，把这个宏改成 1 即可。 */
 #define GRAY_BIT_BLACK_IS_1   0
 
-/* ---------------- 软件 I2C 底层（开漏输出） ---------------- */
-static void IIC_Delay(void)
-{
-    delay_us(2);        /* 约 100kHz；模块不稳时把 2 改大一点 */
-}
-
-static void IIC_Start(void)
-{
-    GRAY_SDA_SET;    IIC_Delay();
-    GRAY_SCL_SET;    IIC_Delay();
-    GRAY_SDA_RESET;  IIC_Delay();
-    GRAY_SCL_RESET;  IIC_Delay();
-}
-
-static void IIC_Stop(void)
-{
-    GRAY_SDA_RESET;  IIC_Delay();
-    GRAY_SCL_SET;    IIC_Delay();
-    GRAY_SDA_SET;    IIC_Delay();
-}
-
-/* 发 1 字节，返回应答：0 = 从机 ACK，1 = 无应答 */
-static u8 IIC_WriteByte(u8 dat)
-{
-    u8 i, ack;
-
-    for (i = 0; i < 8; i++)
-    {
-        GRAY_SCL_RESET;  IIC_Delay();
-        if (dat & 0x80)  GRAY_SDA_SET;
-        else             GRAY_SDA_RESET;
-        IIC_Delay();
-        GRAY_SCL_SET;    IIC_Delay();
-        dat <<= 1;
-    }
-
-    GRAY_SCL_RESET;  IIC_Delay();
-    GRAY_SDA_SET;    IIC_Delay();      /* 释放 SDA，等从机应答 */
-    GRAY_SCL_SET;    IIC_Delay();
-    ack = GRAY_SDA_READ;               /* 0 = ACK */
-    GRAY_SCL_RESET;  IIC_Delay();
-
-    return ack;
-}
-
-/* 读 1 字节；ack：0 = 给应答(还要继续读)，1 = 不应答(最后一个字节) */
-static u8 IIC_ReadByte(u8 ack)
-{
-    u8 i, dat = 0;
-
-    GRAY_SDA_SET;    IIC_Delay();      /* 释放 SDA，作为输入 */
-    for (i = 0; i < 8; i++)
-    {
-        GRAY_SCL_RESET;  IIC_Delay();
-        GRAY_SCL_SET;    IIC_Delay();
-        dat <<= 1;
-        if (GRAY_SDA_READ) dat |= 0x01;
-    }
-
-    GRAY_SCL_RESET;  IIC_Delay();
-    if (ack) GRAY_SDA_SET;  else GRAY_SDA_RESET;
-    IIC_Delay();
-    GRAY_SCL_SET;    IIC_Delay();
-    GRAY_SCL_RESET;  IIC_Delay();
-    GRAY_SDA_SET;
-
-    return dat;
-}
-
-/* 读单个寄存器：写寄存器地址 → 重复起始 → 读 1 字节 */
-static u8 IIC_ReadReg(u8 reg)
-{
-    u8 dat;
-
-    IIC_Start();
-    if (IIC_WriteByte((u8)(GRAY_I2C_ADDR << 1)))        { IIC_Stop(); return 0xFF; }
-    if (IIC_WriteByte(reg))                              { IIC_Stop(); return 0xFF; }
-
-    IIC_Start();
-    if (IIC_WriteByte((u8)((GRAY_I2C_ADDR << 1) | 1)))   { IIC_Stop(); return 0xFF; }
-
-    dat = IIC_ReadByte(1);      /* 最后 1 字节，回 NACK */
-    IIC_Stop();
-
-    return dat;
-}
-
-/* 连续读寄存器：从 reg 开始读 len 个字节 */
-static u8 IIC_ReadRegs(u8 reg, u8 *buf, u8 len)
-{
-    u8 i;
-
-    IIC_Start();
-    if (IIC_WriteByte((u8)(GRAY_I2C_ADDR << 1)))         { IIC_Stop(); return 0; }
-    if (IIC_WriteByte(reg))                               { IIC_Stop(); return 0; }
-
-    IIC_Start();
-    if (IIC_WriteByte((u8)((GRAY_I2C_ADDR << 1) | 1)))    { IIC_Stop(); return 0; }
-
-    for (i = 0; i < len; i++)
-    {
-        buf[i] = IIC_ReadByte((i == (u8)(len - 1)) ? 1 : 0);
-    }
-    IIC_Stop();
-
-    return 1;
-}
-
-/* ---------------- 模块状态 ---------------- */
-static u8  gray_online = 0;      /* 1 = 模块在线 */
-static u8  gray_bits   = 0;      /* 最近一次读到的 8 位数字量 */
-static int gray_error  = 999;    /* 本周期线位置误差；999 = 丢线 */
-static int last_error  = 0;      /* 上一次有效误差（丢线时用来决定往哪找） */
-static u16 lost_ms     = 0;      /* 已丢线时间 */
+static u8 gray_bits  = 0;       /* 最近一次读到的 8 位数字量 */
+static int gray_error = 999;    /* 本周期线位置误差；999 = 丢线 */
+static int last_error = 0;      /* 上一次有效误差（丢线时决定往哪找） */
+static u16 lost_ms    = 0;      /* 已丢线时间 */
 
 /* 探头位置权重：bit0 = 探头1（最右）→ +350 …… bit7 = 探头8（最左）→ -350 */
 static const int probe_pos[8] = { 350, 250, 150, 50, -50, -150, -250, -350 };
 
-/* ---------------- 对外调试接口 ---------------- */
-u8 Gray_Ping(void)
+/* ---------------- 串行读取 8 位数字量 ---------------- */
+u8 Gray_ReadByte(void)
 {
-    return (IIC_ReadReg(GW_GRAY_PING) == GW_GRAY_PING_OK) ? 0 : 1;
+    u8 i, dat = 0;
+
+    for (i = 0; i < 8; i++)
+    {
+        GRAY_CLK_RESET;                 /* 时钟下降沿 */
+        delay_us(2);                    /* 等数据稳定 */
+
+        if (GRAY_DAT_READ) dat |= (u8)(1 << i);
+
+        GRAY_CLK_SET;                   /* 上升沿：模块切换下一位 */
+        delay_us(5);                    /* 厂家要求约 5us */
+    }
+
+    return dat;
 }
 
-u8 Gray_ReadDigital(void)
-{
-    return IIC_ReadReg(GW_GRAY_DIGITAL_MODE);
-}
-
-u8 Gray_ReadAnalog(u8 *buf8)
-{
-    return IIC_ReadRegs(GW_GRAY_ANALOG_BASE, buf8, 8);
-}
-
-u8  Gray_GetBits(void)    { return gray_bits; }
-u8  Gray_IsOnline(void)   { return gray_online; }
-int Gray_GetError(void)   { return gray_error; }
+u8  Gray_GetBits(void)  { return gray_bits; }
+int Gray_GetError(void) { return gray_error; }
 
 /* ---------------- 读一次并算出误差 ---------------- */
 static void Gray_Update(void)
@@ -164,7 +61,7 @@ static void Gray_Update(void)
     u8  cnt = 0;
     int sum = 0;
 
-    gray_bits = Gray_ReadDigital();
+    gray_bits = Gray_ReadByte();
 
 #if GRAY_BIT_BLACK_IS_1
     black_mask = gray_bits;                 /* bit=1 表示黑 */
@@ -192,16 +89,22 @@ void IRSearchInit(void)
 
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
 
-    GPIO_InitStructure.GPIO_Pin   = GRAY_SCL_PIN | GRAY_SDA_PIN;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD;     /* 开漏，靠模块上拉 */
+    /* CLK：推挽输出（单片机 -> 模块） */
+    GPIO_InitStructure.GPIO_Pin   = GRAY_CLK_PIN;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    GPIO_Init(GRAY_CLK_GPIO, &GPIO_InitStructure);
 
-    GRAY_SCL_SET;
-    GRAY_SDA_SET;
-    delay_ms(5);                        /* 等模块上电稳定 */
+    /* DAT：上拉输入（模块 -> 单片机）。模块是 5V 输出，PB11 是 5V 容忍脚 */
+    GPIO_InitStructure.GPIO_Pin   = GRAY_DAT_PIN;
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GRAY_DAT_GPIO, &GPIO_InitStructure);
 
-    gray_online = (Gray_Ping() == 0) ? 1 : 0;
+    GRAY_CLK_SET;               /* 空闲时 CLK 保持高电平 */
+    delay_ms(5);                /* 等模块上电稳定 */
+
+    gray_bits = Gray_ReadByte();/* 先读一次，串口能看到 */
 }
 
 /* ---------------- 循迹任务：每 10ms 调用一次 ---------------- */
@@ -290,11 +193,8 @@ void SearchRun(void)
 }
 
 /* 方案二没有灰度传感器，调试接口给固定值 */
-u8  Gray_Ping(void)          { return 1; }
-u8  Gray_ReadDigital(void)   { return 0; }
-u8  Gray_ReadAnalog(u8 *b)   { (void)b; return 0; }
-u8  Gray_GetBits(void)       { return 0; }
-u8  Gray_IsOnline(void)      { return 0; }
-int Gray_GetError(void)      { return 999; }
+u8  Gray_ReadByte(void)  { return 0; }
+u8  Gray_GetBits(void)   { return 0; }
+int Gray_GetError(void)  { return 999; }
 
 #endif

@@ -9,19 +9,19 @@
 #include <stdio.h>
 
 /* ==========================================================================
- *  ZYSTM32-A0 智能小车  综合程序  v2.1
+ *  ZYSTM32-A0 智能小车  综合程序  v2.2
  *  --------------------------------------------------------------------
  *  三种模式，按 PC2 按键循环切换，LED 指示：
- *      模式1 循迹   D4 亮 / D3 灭      SearchRun()   ← v2.1 改为感为 8 路灰度
+ *      模式1 循迹   D4 亮 / D3 灭      SearchRun()   ← 感为 8 路灰度（串行）
  *      模式2 避障   D4 灭（D3 作障碍指示） AVoidRun()
  *      模式3 遥控   D4 亮 / D3 亮       IR_IN()
  *
- *  v2.1 相对 v2.0：循迹由"两路红外探头"升级为"感为 8 路灰度 + PD 控制"
- *    - 灰度接线：VCC→5V、GND→GND、SCL→PB10(IO16)、SDA→PB11(IO15)，PULL 跳线短接
- *    - 想退回旧的两路探头：把 IRSEARCH.h 里 LINE_USE_GRAY 改成 0 即可
+ *  灰度接线（串行接口，不用 I2C、不用上拉跳线）：
+ *      VCC → 5V    GND → GND
+ *      CLK → PB10（IO16）      DAT → PB11（IO15）
  * ========================================================================== */
 
-#define FIRMWARE_VER        "v2.1"
+#define FIRMWARE_VER        "v2.2"
 #define TICK_MS             10      /* 主循环节拍(ms)，即 100Hz */
 #define DEBUG_UART          1       /* 1=打开串口调试打印，0=关闭 */
 
@@ -122,11 +122,9 @@ void ModeTask(void)
 }
 
 /* ------------------------- 串口调试打印（每 200ms 一次） -------------------------
- * gray=xx 是灰度模块返回的 8 位数字量（16 进制），err 是算出来的线位置误差：
- *     0    → 线在正中间
- *     负数 → 线偏左，正数 → 线偏右
- *     999  → 丢线（一个探头都没压到黑线）
- * ping=0 表示灰度模块在线；ping=1 表示没通信上（查 SCL/SDA/PULL 跳线/供电）
+ * gray=xx  灰度模块返回的 8 位数字量（16 进制）
+ * err      线位置误差：0 居中，负数偏左，正数偏右，999 丢线
+ *          把车横着慢慢移过黑线，看 gray 和 err 是否连续变化即可判断接线/极性
  * ------------------------------------------------------------------------------ */
 void Debug_Task(void)
 {
@@ -136,13 +134,12 @@ void Debug_Task(void)
     if (++cnt >= 20)
     {
         cnt = 0;
-        printf("mode=%d L=%4d R=%4d | gray=%02X err=%4d ping=%d avoid=%d\r\n",
+        printf("mode=%d L=%4d R=%4d | gray=%02X err=%4d avoid=%d\r\n",
                keyMode,
                Motor_GetLeft(),
                Motor_GetRight(),
                Gray_GetBits(),
                Gray_GetError(),
-               Gray_Ping(),
                AVOID_IO);
     }
 #endif
@@ -153,7 +150,7 @@ int main(void)
 {
     delay_init();
     KEY_Init();             /* 按键 PC2 / 蜂鸣器 PC3 / LED D3 PB6 / D4 PA6 */
-    IRSearchInit();         /* 循迹：灰度(I2C PB10/PB11) 或 两路探头(PA7/PB0) */
+    IRSearchInit();         /* 循迹：灰度(串行 PB10/PB11) 或 两路探头(PA7/PB0) */
     IRAvoidInit();          /* 避障探头 PB1 */
     Motor_Init();           /* TIM4 PWM：左 CH3-PB8，右 CH4-PB9 */
     Remote_Init();          /* 红外遥控 PA1 + TIM5 输入捕获 */
@@ -161,8 +158,7 @@ int main(void)
 #if DEBUG_UART
     uart_init(115200);      /* USART1 PA9/PA10 → 板载 CH340G → USB */
     printf("\r\n[BOOT] ZYSTM32-A0 %s  build %s %s\r\n", FIRMWARE_VER, __DATE__, __TIME__);
-    printf("[BOOT] gray ping = %d (%s)\r\n",
-           Gray_Ping(), Gray_Ping() == 0 ? "online" : "NO ACK");
+    printf("[BOOT] gray first read = 0x%02X\r\n", Gray_GetBits());
 #endif
 
     Motor_Stop();
