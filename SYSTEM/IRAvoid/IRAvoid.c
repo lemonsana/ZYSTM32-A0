@@ -5,499 +5,220 @@
 #include "stm32f10x.h"
 
 /* ============================================================================
- *  避障模块  v3.5 实现
+ *  红外避障模块  v3.4
  *  ==========================================================================
- *  分层：
- *      1) 超声波驱动（HC-SR04）   TIM2 计数 + EXTI1 双沿，非阻塞，30ms 超时
- *      2) 舵机驱动                 TIM3_CH3 / PB0，50Hz
- *      3) 避障状态机              两版二选一（AVOID_SCAN_WHILE_DRIVING）
  *
- *  超声波测距原理：
- *      TRIG 给 15us 高电平 → 模块发 8 个 40kHz 脉冲
- *      → ECHO 拉高（上升沿）开始计时 → ECHO 拉低（下降沿）结束
- *      → 高电平时间 t(us) 与距离的关系：distance_cm = t / 58
- *      （等价于 t × 0.017，声速 340m/s，往返除以 2）
+ *  【硬件】
+ *      避障探头 PB1（丝印 IO5），输出低电平 = 前方有障碍。
+ *      模块上的电位器决定检测距离（一般 10~30cm），本程序不关心具体数值。
+ *      注意：只有一个正前方探头，**无法判断左右哪边更空**，所以绕行方向写死
+ *            （由 AVOID_TURN_DIR 决定，默认往左）。想自动选边，需要再加一个
+ *            右侧探头（可挂到空闲的 IO6 / PA8）。
  *
- *  为什么用 EXTI 双沿而不是"中断里死等"：
- *      厂商例程在 EXTI 中断里 while(ECHO 高) 死等，没有回波时（前方无遮挡、
- *      超出量程、模块没接）会永远卡在中断里，整机死机。
- *      这里改成：上升沿记录起点、下降沿计算宽度，主循环最多等 30ms，
- *      超时就判"无效"，永远不会卡死。
+ *  【v1 原厂做法的问题】
+ *      有障碍 → 停车 300ms → 后退 400ms → 左转 500ms
+ *      三个动作都是 delay_ms 阻塞，合计 1.2 秒"闭眼"开环跑，途中看不见前方，
+ *      而且每次都要停下来退一步，很笨。
+ *
+ *  【v2 做法的问题】
+ *      检测到就进入"外侧 90 / 内侧 15"的弧线，固定保持 400ms。
+ *      问题 1：单帧触发没有去抖，反光/噪声会误触发；
+ *      问题 2：障碍很近时"内侧 15"转得不够，容易蹭上；
+ *      问题 3：障碍刚消失就立刻直行，但车头还歪着，往往马上又触发 → 左右摆。
+ *
+ *  【v3.4 做法：状态机 + 去抖 + 两级转弯 + 回正补偿】
+ *
+ *      ┌──────────┐ 连续 N 帧有障碍   ┌──────────────┐
+ *      │  IDLE    │ ───────────────→ │  TURN        │
+ *      │ 直行 60  │                  │ 一级→二级    │
+ *      └──────────┘ ←─────────────── └──────────────┘
+ *            ↑      回正完成                │ 障碍消失
+ *            │                              ↓
+ *            │                      ┌──────────────┐
+ *            └──────────────────────│  RECOVER     │
+ *                                   │ 反向小幅修正 │
+ *                                   └──────────────┘
+ *
+ *      ① 去抖：连续 AVOID_DEBOUNCE 帧（默认 3 帧 = 30ms）都检测到才算数
+ *      ② 两级转弯：
+ *           一级（前 250ms）：内侧 25，边走边转，先温和避让
+ *           二级（之后）  ：内侧 -35（**反转**），转弯半径骤减，硬绕
+ *      ③ 回正：障碍消失后不立刻直行，而是先**反方向**小幅修正 250ms，
+ *              把车头摆回来，减少"刚绕开又撞上"的反复
+ *      ④ 全程不堵车：每 10ms 只算一次、写一次 PWM，立即返回，不占用 CPU
+ *
+ *  【调参指南】（都在下面的宏里改，改完重新编译即可）
+ *      AVOID_BASE_SPEED   直行速度：跑太快来不及反应就调小（60→45）
+ *      AVOID_OUTER_SPEED  转弯外侧速度：想绕得更急就 90→100
+ *      AVOID_INNER_SOFT   一级内侧速度：转不够就调小（25→10），转太猛就调大
+ *      AVOID_INNER_HARD   二级内侧速度：允许负数（-35 = 内轮倒转，原地搓）
+ *      AVOID_STAGE1_MS    一级持续多久升二级：障碍远就调大，障碍近就调小
+ *      AVOID_HOLD_MS      二级保持时间：绕不过去就调大（600→900）
+ *      AVOID_RECOVER_MS   回正时长：还在左右摆就调大（250→400）
+ *      AVOID_RECOVER_DELTA 回正力度：摆回来太快/太慢调这个
+ *      AVOID_TURN_DIR     -1 往左绕 / +1 往右绕（改这一个数字即可换边）
  * ========================================================================== */
 
-/* ---------------------------- 引脚 ---------------------------- */
-#define ULTRA_TRIG_PORT        GPIOC
-#define ULTRA_TRIG_PIN         GPIO_Pin_0      /* PC0  TRIG */
-#define ULTRA_ECHO_PORT        GPIOC
-#define ULTRA_ECHO_PIN         GPIO_Pin_1      /* PC1  ECHO */
-#define SERVO_PORT             GPIOB
-#define SERVO_PIN              GPIO_Pin_0      /* PB0  TIM3_CH3 */
+/* ---------------------------- 可调参数 ---------------------------- */
+#define AVOID_BASE_SPEED       60   /* 直行速度 */
+#define AVOID_OUTER_SPEED      90   /* 绕行外侧轮速度（快） */
+#define AVOID_INNER_SOFT       25   /* 一级绕行内侧轮速度（慢，但仍向前） */
+#define AVOID_INNER_HARD      -35   /* 二级绕行内侧轮速度（负数 = 倒转，急转） */
 
-/* ---------------------- 超声波测量状态 ---------------------- */
-static volatile u8  ultra_stage = 0;    /* 0=空闲  1=等上升沿  2=等下降沿 */
-static volatile u16 ultra_start = 0;    /* 上升沿时刻（TIM2 计数，1us） */
-static volatile u16 ultra_width = 0;    /* 回波高电平宽度（us） */
-static volatile u8  ultra_done  = 0;    /* 1=本次测量完成 */
+#define AVOID_STAGE1_MS       250   /* 一级转多久后升级为二级 */
+#define AVOID_HOLD_MS         600   /* 二级最少保持多久 */
+#define AVOID_RECOVER_MS      250   /* 回正（反向修正）持续多久 */
+#define AVOID_RECOVER_DELTA    25   /* 回正时内外轮的差速量 */
 
-/* ---------------------- 舵机 ---------------------- */
-static u8 av_angle = AV_SERVO_CENTER;
+#define AVOID_DEBOUNCE          3   /* 连续多少帧检测到才算"有障碍"（3×10ms=30ms） */
+#define AVOID_TURN_DIR         -1   /* -1 = 往左绕（默认）；+1 = 往右绕 */
+#define AVOID_TICK_MS          10   /* 主循环节拍，必须与 main.c 的 TICK_MS 一致 */
 
-/* ---------------------- 状态机 ---------------------- */
-#define AV_IDLE      0
-#define AV_SCAN      1
-#define AV_TURN      2
-#define AV_RECOVER   3
+/* ---------------------------- 状态机 ---------------------------- */
+#define AV_STATE_IDLE     0
+#define AV_STATE_TURN     1
+#define AV_STATE_RECOVER  2
 
-static u8  av_state      = AV_IDLE;
-static u8  av_step       = 0;
-static u16 av_timer      = 0;      /* 当前阶段倒计时(ms) */
-static u16 av_tick_cnt   = 0;      /* 测量周期计数 */
-static u8  av_dist       = 0;      /* 前方距离 */
-static u8  av_dist_l     = 0;      /* 左侧距离 */
-static u8  av_dist_r     = 0;      /* 右侧距离 */
-static u8  av_turn_left  = 1;      /* 本次往左转? */
-static u8  av_sweep_dir  = 1;      /* 边走边扫：舵机扫描方向 +1/-1 */
-static u8  av_best_angle = AV_SERVO_CENTER;  /* 边走边扫：最空的角度 */
-static u8  av_best_dist  = 0;
-static u8  av_phase      = 0;      /* 边走边扫：0=转舵机 1=测距 */
+static u8  av_state   = AV_STATE_IDLE;   /* 当前状态 */
+static u8  av_stage   = 1;               /* 转弯级别：1=一级 2=二级 */
+static u16 av_timer   = 0;               /* 当前阶段的倒计时(ms) */
+static u8  av_blocked = 0;               /* 去抖计数 */
 
-/* ==========================================================================
- *  超声波驱动
- * ========================================================================== */
+u8 AVoid_GetState(void) { return av_state; }
 
-/* 初始化：PC0 推挽输出、PC1 下拉输入 + EXTI1 双沿、TIM2 1MHz 计数 */
-static void Ultra_Init(void)
-{
-    GPIO_InitTypeDef        gpio;
-    EXTI_InitTypeDef        exti;
-    NVIC_InitTypeDef        nvic;
-    TIM_TimeBaseInitTypeDef tb;
-
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO, ENABLE);
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-
-    /* TRIG：PC0 推挽输出，初始低 */
-    gpio.GPIO_Pin   = ULTRA_TRIG_PIN;
-    gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
-    gpio.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(ULTRA_TRIG_PORT, &gpio);
-    GPIO_ResetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
-
-    /* ECHO：PC1 下拉输入 */
-    gpio.GPIO_Pin  = ULTRA_ECHO_PIN;
-    gpio.GPIO_Mode = GPIO_Mode_IPD;
-    GPIO_Init(ULTRA_ECHO_PORT, &gpio);
-
-    /* EXTI1：PC1 上升沿 + 下降沿都触发 */
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOC, GPIO_PinSource1);
-    exti.EXTI_Line    = EXTI_Line1;
-    exti.EXTI_Mode    = EXTI_Mode_Interrupt;
-    exti.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
-    exti.EXTI_LineCmd = ENABLE;
-    EXTI_Init(&exti);
-
-    nvic.NVIC_IRQChannel                   = EXTI1_IRQn;
-    nvic.NVIC_IRQChannelPreemptionPriority = 1;
-    nvic.NVIC_IRQChannelSubPriority        = 1;
-    nvic.NVIC_IRQChannelCmd                = ENABLE;
-    NVIC_Init(&nvic);
-
-    /* TIM2：72MHz / (71+1) = 1MHz，1 个计数 = 1us，16 位自由计数 */
-    tb.TIM_Period        = 0xFFFF;
-    tb.TIM_Prescaler     = 71;
-    tb.TIM_ClockDivision = 0;
-    tb.TIM_CounterMode   = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM2, &tb);
-    TIM_Cmd(TIM2, ENABLE);
-}
-
-/* EXTI1：ECHO 双沿中断
- * 上升沿：记下起点
- * 下降沿：算出宽度，标记完成
- * 注意：这里只做最少的事，绝不死等（这是厂商例程最大的坑）
- */
-void EXTI1_IRQHandler(void)
-{
-    if (EXTI_GetITStatus(EXTI_Line1) != RESET)
-    {
-        if (GPIO_ReadInputDataBit(ULTRA_ECHO_PORT, ULTRA_ECHO_PIN))   /* 上升沿 */
-        {
-            if (ultra_stage == 1)
-            {
-                ultra_start = (u16)TIM2->CNT;
-                ultra_stage = 2;
-            }
-        }
-        else                                                          /* 下降沿 */
-        {
-            if (ultra_stage == 2)
-            {
-                ultra_width = (u16)((u16)TIM2->CNT - ultra_start);    /* 16 位自动回绕 */
-                ultra_done  = 1;
-                ultra_stage = 0;
-            }
-        }
-        EXTI_ClearITPendingBit(EXTI_Line1);
-    }
-}
-
-/* 发起一次测距并等待结果
- * 返回：距离(cm)，0 = 超时/无回波/超量程（都视为"没有障碍"或"无效"）
- * 阻塞时间：正常 1~20ms，最坏 30ms（有超时保护）
- */
-static u8 Ultra_Measure(void)
-{
-    u16 wait;
-
-    /* 上一次没结束的残留先清掉 */
-    ultra_done  = 0;
-    ultra_width = 0;
-    ultra_stage = 1;
-
-    /* 15us 触发脉冲 */
-    GPIO_SetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
-    delay_us(15);
-    GPIO_ResetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
-
-    /* 最多等 30ms（300 × 100us） */
-    for (wait = 0; wait < (AV_MEAS_TIMEOUT_US / 100); wait++)
-    {
-        if (ultra_done) break;
-        delay_us(100);
-    }
-
-    if (!ultra_done)
-    {
-        ultra_stage = 0;
-        return 0;
-    }
-
-    /* 宽度(us) → 厘米：t / 58 */
-    {
-        u32 cm = (u32)ultra_width / 58;
-        if (cm == 0 || cm > 200) return 0;      /* 0 或超量程（>2m）都算无效 */
-        return (u8)cm;
-    }
-}
-
-/* ==========================================================================
- *  舵机驱动（TIM3_CH3 / PB0，50Hz）
- * ========================================================================== */
-
-static void Servo_Init(void)
-{
-    GPIO_InitTypeDef        gpio;
-    TIM_TimeBaseInitTypeDef tb;
-    TIM_OCInitTypeDef       oc;
-
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
-
-    /* PB0 = TIM3_CH3，复用推挽 */
-    gpio.GPIO_Pin   = SERVO_PIN;
-    gpio.GPIO_Mode  = GPIO_Mode_AF_PP;
-    gpio.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(SERVO_PORT, &gpio);
-
-    /* 1MHz 计数，20ms 周期（ARR=19999） */
-    tb.TIM_Period        = 19999;
-    tb.TIM_Prescaler     = 71;
-    tb.TIM_ClockDivision = 0;
-    tb.TIM_CounterMode   = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM3, &tb);
-
-    oc.TIM_OCMode      = TIM_OCMode_PWM1;
-    oc.TIM_OutputState = TIM_OutputState_Enable;
-    oc.TIM_Pulse       = 1500;              /* 中位 1.5ms */
-    oc.TIM_OCPolarity  = TIM_OCPolarity_High;
-    TIM_OC3Init(TIM3, &oc);
-
-    TIM_OC3PreloadConfig(TIM3, TIM_OCPreload_Enable);
-    TIM_ARRPreloadConfig(TIM3, ENABLE);
-    TIM_Cmd(TIM3, ENABLE);
-}
-
-/* 角度 0~180 → 脉宽 500~2500us */
-static void Servo_SetAngle(u8 deg)
-{
-    u16 ccr;
-    if (deg > 180) deg = 180;
-    ccr = (u16)(500 + (u16)deg * 2000 / 180);
-    TIM_SetCompare3(TIM3, ccr);
-    av_angle = deg;
-}
-
-/* ==========================================================================
- *  对外接口
- * ========================================================================== */
-u8 AVoid_GetState(void)    { return av_state; }
-u8 AVoid_GetDistance(void) { return av_dist; }
-u8 AVoid_GetAngle(void)    { return av_angle; }
-
+/* 初始化：避障探头配置为上拉输入 */
 void IRAvoidInit(void)
 {
-    Ultra_Init();
-    Servo_Init();
+    GPIO_InitTypeDef  GPIO_InitStructure;
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB , ENABLE);
 
-    av_state      = AV_IDLE;
-    av_step       = 0;
-    av_timer      = 0;
-    av_tick_cnt   = 0;
-    av_dist       = 0;
-    av_turn_left  = 1;
-    av_sweep_dir  = 1;
-    av_best_angle = AV_SERVO_CENTER;
-    av_best_dist  = 0;
+    GPIO_InitStructure.GPIO_Pin   = AVOID_PIN;      /* PB1 */
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(AVOID_PIN_GPIO, &GPIO_InitStructure);
 
-    Servo_SetAngle(AV_SERVO_CENTER);
-    delay_ms(300);              /* 等舵机归中 */
+    av_state   = AV_STATE_IDLE;
+    av_stage   = 1;
+    av_timer   = 0;
+    av_blocked = 0;
 }
 
-/* ==========================================================================
- *  版本一：停车扫描（AVOID_SCAN_WHILE_DRIVING = 0）
- * ==========================================================================
- *  IDLE 直行 ──前方<AV_TRIGGER_CM──→ 停车
- *      → SCAN：中位测前方 → 左极限测左 → 右极限测右
- *      → 选距离大的一侧（两侧都 <AV_MIN_GAP_CM 就原地掉头）
- *      → TURN 转向 → RECOVER 回正 → IDLE
+/* 按级别输出转弯动作
+ * 一级：内侧轮慢但仍向前（走路带转）
+ * 二级：内侧轮倒转（像坦克原地搓），转弯半径最小
  */
-#if !AVOID_SCAN_WHILE_DRIVING
-
-static void AVoid_RunStopScan(void)
+static void Avoid_ApplyTurn(u8 stage)
 {
+    int inner = (stage >= 2) ? AVOID_INNER_HARD : AVOID_INNER_SOFT;
+
+#if (AVOID_TURN_DIR > 0)
+    /* 往右绕：左轮（外侧）快、右轮（内侧）慢/倒 */
+    Motor_SetSpeed(AVOID_OUTER_SPEED, inner);
+#else
+    /* 往左绕：左轮（内侧）慢/倒、右轮（外侧）快 */
+    Motor_SetSpeed(inner, AVOID_OUTER_SPEED);
+#endif
+}
+
+/* 回正：反方向小幅修正，把车头摆回来
+ * 例如往左绕过障碍后，需要轻微往右带一下
+ */
+static void Avoid_ApplyRecover(void)
+{
+#if (AVOID_TURN_DIR > 0)
+    /* 之前往右绕 → 现在轻微往左摆 */
+    Motor_SetSpeed(AVOID_BASE_SPEED - AVOID_RECOVER_DELTA,
+                   AVOID_BASE_SPEED + AVOID_RECOVER_DELTA);
+#else
+    /* 之前往左绕 → 现在轻微往右摆 */
+    Motor_SetSpeed(AVOID_BASE_SPEED + AVOID_RECOVER_DELTA,
+                   AVOID_BASE_SPEED - AVOID_RECOVER_DELTA);
+#endif
+}
+
+/* 避障任务：主循环每 AVOID_TICK_MS 调用一次，立即返回 */
+void AVoidRun(void)
+{
+    u8 detected;
+
+    /* ---------- 1. 采样 + 去抖 ---------- */
+    if (AVOID_IO == BARRIER_Y)
+    {
+        if (av_blocked < 255) av_blocked++;
+    }
+    else
+    {
+        av_blocked = 0;
+    }
+    detected = (av_blocked >= AVOID_DEBOUNCE) ? 1 : 0;
+
+    /* ---------- 2. 状态机 ---------- */
     switch (av_state)
     {
-        /* ---------------- 直行，定时量前方 ---------------- */
-        case AV_IDLE:
-            Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
-
-            if (++av_tick_cnt >= (AV_MEAS_PERIOD_MS / 10))
+        case AV_STATE_IDLE:
+            if (detected)
             {
-                av_tick_cnt = 0;
-                av_dist = Ultra_Measure();
-
-                if (av_dist && av_dist < AV_TRIGGER_CM)      /* 有障碍 */
-                {
-                    Motor_Stop();                            /* 先停稳再扫，测距最准 */
-                    Servo_SetAngle(AV_SERVO_CENTER);
-                    av_state = AV_SCAN;
-                    av_step  = 0;
-                    av_timer = AV_SETTLE_MS;
-                }
-            }
-            break;
-
-        /* ---------------- 扫描三个方向 ---------------- */
-        case AV_SCAN:
-            if (av_timer > 0) { av_timer -= 10; break; }
-
-            if (av_step == 0)                                /* 中位：已就绪，测前方 */
-            {
-                av_dist = Ultra_Measure();
-                Servo_SetAngle(AV_SERVO_LEFT);
-                av_step  = 1;
-                av_timer = AV_SETTLE_MS;
-            }
-            else if (av_step == 1)                           /* 左侧 */
-            {
-                av_dist_l = Ultra_Measure();
-                Servo_SetAngle(AV_SERVO_RIGHT);
-                av_step  = 2;
-                av_timer = AV_SETTLE_MS;
-            }
-            else                                             /* 右侧，然后决策 */
-            {
-                av_dist_r = Ultra_Measure();
-                Servo_SetAngle(AV_SERVO_CENTER);
-
-                if (av_dist_l < AV_MIN_GAP_CM && av_dist_r < AV_MIN_GAP_CM)
-                {
-                    av_turn_left = 0xFF;                     /* 特殊值：原地掉头 */
-                }
-                else
-                {
-                    /* 无效(0)按"很远"处理 */
-                    av_turn_left = ((av_dist_l ? av_dist_l : 200) >=
-                                    (av_dist_r ? av_dist_r : 200)) ? 1 : 0;
-                }
-
-                BEEP_SET;
+                av_state = AV_STATE_TURN;
+                av_stage = 1;
+                av_timer = AVOID_STAGE1_MS;
+                BEEP_SET;               /* 声光提示 */
                 LED_D3_SET;
-                av_state = AV_TURN;
-                av_timer = AV_TURN_MS;
             }
-            break;
-
-        /* ---------------- 转向 ---------------- */
-        case AV_TURN:
-            if (av_turn_left == 0xFF)
-                Motor_SetSpeed(-AV_SPIN_SPEED, AV_SPIN_SPEED);   /* 原地左掉头 */
-            else if (av_turn_left)
-                Motor_SetSpeed(AV_TURN_INNER, AV_TURN_OUTER);    /* 左转 */
-            else
-                Motor_SetSpeed(AV_TURN_OUTER, AV_TURN_INNER);    /* 右转 */
-
-            if (av_timer > 0) av_timer -= 10;
-            else { av_state = AV_RECOVER; av_timer = AV_RECOVER_MS; }
-            break;
-
-        /* ---------------- 回正 ---------------- */
-        case AV_RECOVER:
-            Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
-            if (av_timer > 0) av_timer -= 10;
             else
             {
-                av_state    = AV_IDLE;
-                av_tick_cnt = 0;
                 BEEP_RESET;
                 LED_D3_RESET;
+                Motor_SetSpeed(AVOID_BASE_SPEED, AVOID_BASE_SPEED);   /* 直行 */
             }
             break;
 
-        default:
-            av_state = AV_IDLE;
-            break;
-    }
-}
-
-#endif  /* !AVOID_SCAN_WHILE_DRIVING */
-
-/* ==========================================================================
- *  版本二：边走边扫（AVOID_SCAN_WHILE_DRIVING = 1）
- * ==========================================================================
- *  车一直在走，舵机在 [中位 ± AV_SWEEP_HALF] 之间往返扫：
- *      phase0：把舵机转到当前扫描角
- *      phase1：等 AV_SETTLE_MS 后测距，记录"最空角度"
- *  前方 ±20° 内距离 < AV_TRIGGER_CM 时：
- *      朝最近一次扫到的"最空那一侧"直接弧线转过去（不停车）
- *  扫描范围比停车版窄（±40°）：因为行驶中舵机转太快会影响测距稳定性。
- */
-#if AVOID_SCAN_WHILE_DRIVING
-
-static void AVoid_RunDriveScan(void)
-{
-    static u16 turn_timer = 0;
-    u8 d;
-
-    switch (av_state)
-    {
-        /* ---------------- 直行 + 扫描 ---------------- */
-        case AV_IDLE:
-            Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
-
-            if (av_timer > 0)
+        case AV_STATE_TURN:
+            if (detected && av_timer == 0)
             {
-                av_timer -= 10;
+                /* 一级转完还被挡 → 升级为二级（内轮倒转，硬绕） */
+                av_stage = 2;
+                av_timer = AVOID_HOLD_MS;
+            }
+            else if (!detected && av_timer == 0)
+            {
+                /* 障碍已消失且转弯时间到 → 进入回正 */
+                av_state = AV_STATE_RECOVER;
+                av_timer = AVOID_RECOVER_MS;
                 break;
             }
 
-            if (av_phase == 0)                               /* 转舵机 */
-            {
-                Servo_SetAngle(av_angle);
-                av_phase = 1;
-                av_timer = AV_SETTLE_MS;
-            }
-            else                                             /* 测距 + 走下一步 */
-            {
-                d = Ultra_Measure();
-
-                if (d)
-                {
-                    if (d > av_best_dist)                    /* 记录最空方向 */
-                    {
-                        av_best_dist  = d;
-                        av_best_angle = av_angle;
-                    }
-
-                    /* 前方 ±20° 内太近 → 决定往哪边躲 */
-                    if (av_angle >= (AV_SERVO_CENTER - 20) &&
-                        av_angle <= (AV_SERVO_CENTER + 20) &&
-                        d < AV_TRIGGER_CM)
-                    {
-                        av_turn_left = (av_best_angle <= AV_SERVO_CENTER) ? 1 : 0;
-                        av_state  = AV_TURN;
-                        turn_timer = AV_TURN_MS;
-                        BEEP_SET;
-                        LED_D3_SET;
-                        break;
-                    }
-                }
-
-                av_phase = 0;
-
-                /* 扫描角往返：中位 ± AV_SWEEP_HALF，步进 10° */
-                if (av_sweep_dir > 0)
-                {
-                    if (av_angle + 10 >= AV_SERVO_CENTER + AV_SWEEP_HALF)
-                    {
-                        av_sweep_dir = 0;
-                    }
-                    else av_angle += 10;
-                }
-                else
-                {
-                    if (av_angle <= AV_SERVO_CENTER - AV_SWEEP_HALF)
-                    {
-                        av_sweep_dir = 1;
-                    }
-                    else av_angle -= 10;
-                }
-
-                av_timer = 20;      /* 两次测量之间留一点空档，别把主循环占满 */
-            }
+            Avoid_ApplyTurn(av_stage);
+            if (av_timer > 0) av_timer -= AVOID_TICK_MS;
             break;
 
-        /* ---------------- 边走边转 ---------------- */
-        case AV_TURN:
-            if (av_turn_left)
-                Motor_SetSpeed(AV_TURN_INNER, AV_TURN_OUTER);
-            else
-                Motor_SetSpeed(AV_TURN_OUTER, AV_TURN_INNER);
-
-            if (turn_timer > 10) turn_timer -= 10;
-            else
+        case AV_STATE_RECOVER:
+            if (detected)
             {
-                av_state     = AV_RECOVER;
-                av_timer     = AV_RECOVER_MS;
-                av_best_dist = 0;
-                av_best_angle = AV_SERVO_CENTER;
-                av_angle     = AV_SERVO_CENTER;
-                Servo_SetAngle(AV_SERVO_CENTER);
+                /* 回正途中又看到障碍 → 直接回到二级转弯 */
+                av_state = AV_STATE_TURN;
+                av_stage = 2;
+                av_timer = AVOID_HOLD_MS;
+                BEEP_SET;
+                LED_D3_SET;
+                Avoid_ApplyTurn(av_stage);
             }
-            break;
-
-        /* ---------------- 回正后继续扫 ---------------- */
-        case AV_RECOVER:
-            Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
-            if (av_timer > 10) av_timer -= 10;
+            else if (av_timer > AVOID_TICK_MS)
+            {
+                av_timer -= AVOID_TICK_MS;
+                Avoid_ApplyRecover();
+            }
             else
             {
-                av_state = AV_IDLE;
-                av_phase = 0;
+                av_state = AV_STATE_IDLE;
                 av_timer = 0;
-                av_angle = AV_SERVO_CENTER;
-                Servo_SetAngle(AV_SERVO_CENTER);
                 BEEP_RESET;
                 LED_D3_RESET;
+                Motor_SetSpeed(AVOID_BASE_SPEED, AVOID_BASE_SPEED);
             }
             break;
 
         default:
-            av_state = AV_IDLE;
+            av_state = AV_STATE_IDLE;
             break;
     }
-}
-
-#endif  /* AVOID_SCAN_WHILE_DRIVING */
-
-/* ==========================================================================
- *  统一入口
- * ========================================================================== */
-void AVoidRun(void)
-{
-#if AVOID_SCAN_WHILE_DRIVING
-    AVoid_RunDriveScan();
-#else
-    AVoid_RunStopScan();
-#endif
 }

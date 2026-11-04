@@ -42,3 +42,7 @@ MFC*.tmp
 _utf8/
 _check/
 _*.sh
+
+# ---- 临时工作目录（不入库）----
+_utf8/
+_check/
