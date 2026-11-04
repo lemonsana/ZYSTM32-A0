@@ -52,53 +52,89 @@
 #define GRAY_DAT_PIN          GPIO_Pin_11
 #define GRAY_DAT_GPIO         GPIOB
 
-/* ---------------------------- 循迹参数（调车改这里） ----------------------------
- *  GRAY_BASE_SPEED     直行速度 0~100
- *  GRAY_STEER_GAIN     满偏误差（±100）时的转向量，35 表示 ±35
- *  GRAY_BLACK_CUTOFF   归一化模拟量低于此值算"压在黑线上"（白≈255，黑≈0）
- *  GRAY_CENTER_DEADBAND 误差死区，避免中线附近来回抖
- *  GRAY_CHANNEL_MIRROR 1 = 镜像探头顺序（车往反方向修正时改这个）
- *  GRAY_LOST_STOP_MS   丢线超过多久就停车
- *  GRAY_FRAME_MS       必须与 main.c 的 TICK_MS 一致
+/* ============================================================================
+ *  循迹参数（调车就改这一段，改完重新编译烧录）
+ *  ----------------------------------------------------------------------------
+ *  控制链路（自下而上理解，调参时对号入座）：
  *
- *  PID 参数：
- *    GRAY_STEER_GAIN     = P：小误差时的比例增益
- *    GRAY_STEER_GAIN_FAR = P：大误差（急弯）时的比例增益，更"硬"
- *    GRAY_FAR_THRESHOLD  = |误差| 超过这个值就切成 FAR 增益
- *    GRAY_KI             = I：每累积 1000 (误差·毫秒) 贡献的转向量
- *    GRAY_KD             = D：微分系数
- *    GRAY_I_LIMIT        = 积分累加上限（误差·毫秒），防止饱和
+ *    8 路归一化模拟量 (白≈255 黑≈0)
+ *        │
+ *        │ ① 加权重心：wᵢ = CUTOFF − 值ᵢ（越黑权重越大），posᵢ = ±7,±5,±3,±1
+ *        │    error = Σ(wᵢ·posᵢ) / (Σwᵢ·7) × 100      → 范围 −100 ~ +100
+ *        │    0 = 线在正中；负数 = 线偏左；正数 = 线偏右
+ *        ▼
+ *    ┌──────────────────────────────────────────────────────────────┐
+ *    │ ② 一阶低通：filt = (filt×3 + error)/4     （抑制单帧跳变）    │
+ *    │ ③ 死区：|filt| < DEADBAND → 0             （中线附近不抖）    │
+ *    │ ④ PID：                                                      │
+ *    │      P = e × GAIN / 100                                      │
+ *    │      I = (Σ e×帧时长) × KI / 1000                            │
+ *    │      D = (e − e上一帧) × KD / 100                            │
+ *    │      correction = P + I + D                                  │
+ *    │ ⑤ 速度调度：base = BASE − |e|×SLOW_GAIN/100 − |Δe|×SLOW_D_GAIN/100 │
+ *    │ ⑥ 输出：左 = base + correction，右 = base − correction         │
+ *    │    限幅：左/右 ∈ [−INNER_REVERSE, 95]                        │
+ *    └──────────────────────────────────────────────────────────────┘
  *
- *  v3.2 新增（过急弯用）：
- *    GRAY_SLOW_GAIN      = 误差越大越慢：base 减掉 |误差|×SLOW_GAIN/100
- *    GRAY_SLOW_D_GAIN    = 误差变化越快也越慢（进弯前先减速）
- *    GRAY_MIN_SPEED      = 减速后的最低基础速度
- *    GRAY_INNER_REVERSE  = 内轮允许反转的最大幅度（度数），急弯时能显著减小转弯半径
+ *  ----------------------------------------------------------------------------
+ *  【P 项】GRAY_STEER_GAIN / GRAY_STEER_GAIN_FAR / GRAY_FAR_THRESHOLD
+ *      P 是"看到多大偏差就打多大方向"。
+ *      · 直线画龙（左右摆）      → 调小 GAIN（32 → 25）
+ *      · 弯道切不进去/转向不足    → 调大 GAIN（32 → 40）
+ *      GAIN_FAR 是"大误差专用"的档位，|e| 超过 FAR_THRESHOLD 时启用，
+ *      用来在不牺牲直线稳定性的前提下，让急弯打得更狠。
+ *      只调一个的话：先动 GAIN，弯里不够再动 GAIN_FAR。
  *
- *  v3.3 按"前视 12cm"重调（几何分析见 README）：
- *    前视 12cm + 阵列半宽 3.5cm → 能连续跟住的最小弯半径约 20.6cm；
- *    比这更急的弯（视频里 8~10cm 的发夹弯）必然"丢线-找回"，
- *    所以参数往"少超调、快找回"方向调，丢线找回时间放宽到 3 秒。
- * ---------------------------------------------------------------------------- */
-#define GRAY_LOOKAHEAD_CM      12   /* 灰度板到电机驱动轴的距离（用于说明/换算） */
+ *  【D 项】GRAY_KD
+ *      D 是"看到偏差变化多快就提前收手"，起阻尼作用。
+ *      · 进弯冲过头、出弯甩尾    → 调大 KD（12 → 20）
+ *      · 车发抖、电机嗡嗡响       → 调小 KD（12 → 6 或 0）
+ *      本工程误差已过一阶低通，D 不会太吵，但别一次加太多。
+ *
+ *  【I 项】GRAY_KI / GRAY_I_LIMIT
+ *      I 是"偏差长期存在就持续加力"，用来消静差。
+ *      · 车总贴着线的一侧跑、回不到正中 → 加 KI（0 → 2 → 4）
+ *      · 前视 12cm 时**建议保持 0**：探头看得远，积分容易攒成过冲
+ *      I_LIMIT 是积分上限，防止长时间堵转后"甩不回来"。
+ *
+ *  【速度调度】GRAY_SLOW_GAIN / GRAY_SLOW_D_GAIN / GRAY_MIN_SPEED
+ *      base 会随偏差和偏差变化率自动降速：
+ *      · 弯里冲出去                → 调大 SLOW_GAIN / SLOW_D_GAIN
+ *      · 整体太慢、过弯磨蹭        → 调小 SLOW_GAIN，或调大 MIN_SPEED
+ *
+ *  【转弯极限】GRAY_INNER_REVERSE
+ *      内轮允许反转的最大幅度，急弯时"原地搓"能显著减小转弯半径。
+ *      · 急弯拐不过来              → 45 → 60
+ *      · 弯里车尾扫、轮胎打滑      → 45 → 30
+ *
+ *  【丢线找回】GRAY_LOST_SPIN_SPEED / GRAY_LOST_STOP_MS
+ *      · 掉线后找不回来            → 速度调大、时间调长
+ *      · 掉线后乱转圈              → 速度调小
+ *
+ *  【几何前提】GRAY_LOOKAHEAD_CM
+ *      灰度板到驱动轴的距离。前视 L、阵列半宽 h 时，能连续跟住的最小弯半径
+ *      R ≈ L²/(2h)。本车 L=12cm、h≈3.5cm → R ≈ 20.6cm，更急的弯必然丢线，
+ *      此时靠"丢线 → 原地找回"兜底，属于正常现象。
+ * ============================================================================ */
+#define GRAY_LOOKAHEAD_CM      12   /* 灰度板到电机驱动轴的距离（仅说明/换算用） */
 
-#define GRAY_BASE_SPEED        32
-#define GRAY_STEER_GAIN        32
-#define GRAY_STEER_GAIN_FAR    50
-#define GRAY_FAR_THRESHOLD     40
-#define GRAY_KI                 0
-#define GRAY_KD                12
-#define GRAY_I_LIMIT         2500
-#define GRAY_BLACK_CUTOFF     180
-#define GRAY_CENTER_DEADBAND    4
-#define GRAY_CHANNEL_MIRROR     0
+#define GRAY_BASE_SPEED        32   /* 直行基础速度 */
+#define GRAY_STEER_GAIN        32   /* P：小误差增益 */
+#define GRAY_STEER_GAIN_FAR    50   /* P：大误差（急弯）增益 */
+#define GRAY_FAR_THRESHOLD     40   /* |误差| 超过它切换到 FAR 增益 */
+#define GRAY_KI                 0   /* I：积分增益（前视 12cm 建议 0） */
+#define GRAY_KD                12   /* D：微分增益 */
+#define GRAY_I_LIMIT         2500   /* 积分上限（误差·毫秒） */
+#define GRAY_BLACK_CUTOFF     180   /* 低于此值算黑线（白≈255 黑≈0） */
+#define GRAY_CENTER_DEADBAND    4   /* 误差死区 */
+#define GRAY_CHANNEL_MIRROR     0   /* 1 = 镜像探头顺序（方向反了改这个） */
 
-#define GRAY_SLOW_GAIN         20
-#define GRAY_SLOW_D_GAIN       40
-#define GRAY_MIN_SPEED         18
-#define GRAY_INNER_REVERSE     45
+#define GRAY_SLOW_GAIN         20   /* 速度调度：按 |误差| 降速 */
+#define GRAY_SLOW_D_GAIN       40   /* 速度调度：按 |误差变化| 降速（进弯预减速） */
+#define GRAY_MIN_SPEED         18   /* 降速下限 */
+#define GRAY_INNER_REVERSE     45   /* 内轮允许反转的最大幅度 */
 
-#define GRAY_LOST_SPIN_SPEED   50
+#define GRAY_LOST_SPIN_SPEED   50   /* 丢线找线速度 */
 #define GRAY_LOST_STOP_MS    3000
 #define GRAY_FRAME_MS          10
 

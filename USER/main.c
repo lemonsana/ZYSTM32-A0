@@ -9,22 +9,29 @@
 #include <stdio.h>
 
 /* ==========================================================================
- *  ZYSTM32-A0 智能小车  综合程序  v3.0
+ *  ZYSTM32-A0 智能小车  综合程序  v3.4
  *  --------------------------------------------------------------------
- *  三种模式，按 PC2 按键循环切换，LED 指示：
- *      模式1 循迹   D4 亮 / D3 灭      SearchRun()   感为 8 路灰度（I2C）
- *      模式2 避障   D4 灭（D3 作障碍指示） AVoidRun()
+ *  三种模式（循迹 / 避障 / 遥控），按 PC2 按键循环切换，LED 指示：
+ *      模式1 循迹   D4 亮 / D3 灭      SearchRun()   感为 8 路灰度（I2C + PID）
+ *      模式2 避障   D4 灭（D3 作障碍指示） AVoidRun()    状态机 + 两级绕行
  *      模式3 遥控   D4 亮 / D3 亮       IR_IN()
  *
- *  v3.0 关键修复：
- *    1) 电机通道映射改回实测正确值（左 CH4/PB9，右 CH3/PB8）——
- *       v2.0 的判断是错的，"可循迹版本"用原厂映射能跑，说明原厂是对的；
- *    2) 循迹算法整体换成"可循迹版本"的成熟实现（归一化模拟量 + 重心 + 滤波 + 死区）；
- *    3) 丢线超时按毫秒计，与循环节拍无关；
- *    4) 保留 v2.0 的非阻塞电机层与"不停车避障"。
+ *  【版本演进要点】
+ *    v3.0  电机通道改回实测正确值；循迹换成"可循迹版本"的成熟算法
+ *    v3.1  加 PID（I/D 可调）+ 串口 corr 调试字段
+ *    v3.2  急弯增强：速度调度 / 增益调度 / 内轮反转
+ *    v3.3  按实测前视 12cm 重调参数，加"进弯预减速"
+ *    v3.4  避障改为状态机（去抖 + 两级转弯 + 回正补偿）；全工程补充调参注释
+ *
+ *  【主循环结构】
+ *      每 10ms 一拍：
+ *        KeyScanTask()  读按键、切模式（切模式会停车并清 PID 积分）
+ *        ModeTask()     按模式执行（三个任务都是非阻塞，立即返回）
+ *        Debug_Task()   每 200ms 打一行串口
+ *        delay_ms(10)   节拍
  * ========================================================================== */
 
-#define FIRMWARE_VER        "v3.3"
+#define FIRMWARE_VER        "v3.4"
 #define TICK_MS             10      /* 主循环节拍(ms)，必须与 GRAY_FRAME_MS 一致 */
 #define DEBUG_UART          1       /* 1=打开串口调试打印，0=关闭 */
 
@@ -130,7 +137,7 @@ void Debug_Task(void)
     if (++cnt >= 20)
     {
         cnt = 0;
-        printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ready=%d avoid=%d\r\n",
+        printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ready=%d avoid=%d st=%d\r\n",
                keyMode,
                Motor_GetLeft(),
                Motor_GetRight(),
@@ -138,7 +145,8 @@ void Debug_Task(void)
                Gray_GetCorrection(),
                Gray_GetBaseSpeed(),
                Gray_IsReady(),
-               AVOID_IO);
+               AVOID_IO,
+               AVoid_GetState());
     }
 #endif
 }
