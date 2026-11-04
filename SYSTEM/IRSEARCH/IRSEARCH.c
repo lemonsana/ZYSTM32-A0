@@ -36,6 +36,7 @@ static int16_t gray_last_raw_error = 0;   /* 最近一次原始误差（调试用） */
 static int32_t gray_i_sum      = 0;       /* 积分累加，单位：误差·毫秒 */
 static int16_t gray_prev_error = 0;       /* 上一帧误差（D 项用） */
 static int16_t gray_correction = 0;       /* 最近一次 PID 输出（调试用） */
+static int16_t gray_base_speed = 0;       /* 最近一次调度后的基础速度（调试用） */
 
 /* 探头位置权重：下标 0 = 通道1（最左）…… 下标 7 = 通道8（最右）
  * 与"可循迹版本"一致；若实车方向相反，把 GRAY_CHANNEL_MIRROR 改成 1 */
@@ -361,6 +362,8 @@ void SearchRun(void)
     int16_t raw_error = 0;
     int16_t error;
     int16_t abs_e;
+    int16_t d_err;
+    int16_t abs_de;
     int16_t base_speed;
     int16_t gain;
     int16_t correction;
@@ -435,16 +438,23 @@ void SearchRun(void)
     }
     gray_last_error = error;
 
-    /* ---------------- PID 控制（v3.2：增益调度 + 速度调度） ----------------
+    /* ---------------- PID 控制（v3.3：按 12cm 前视距离重调） ----------------
      *   增益调度：|误差| ≤ FAR_THRESHOLD 用 GAIN，超过用 GAIN_FAR（急弯更硬）
-     *   速度调度：base 随 |误差| 下降，最低 MIN_SPEED（急弯自动减速）
+     *   速度调度：base 随 |误差| 下降；另外"误差变化越快"也减速（进弯前先收油）
      *   内轮允许反转：|误差| 大时内侧轮可以给到 -INNER_REVERSE，显著减小转弯半径
-     * ------------------------------------------------------------------- */
+     * -------------------------------------------------------------------- */
     abs_e = (error >= 0) ? error : -error;
 
-    /* 速度调度 */
-    base_speed = (int16_t)(GRAY_BASE_SPEED - (abs_e * GRAY_SLOW_GAIN) / 100);
+    /* 误差变化率（判断是否正在进入弯道） */
+    d_err = (int16_t)(error - gray_prev_error);
+    abs_de = (d_err >= 0) ? d_err : -d_err;
+
+    /* 速度调度：大误差 + 大变化率 → 减速 */
+    base_speed = (int16_t)(GRAY_BASE_SPEED
+                         - (abs_e  * GRAY_SLOW_GAIN)   / 100
+                         - (abs_de * GRAY_SLOW_D_GAIN) / 100);
     if (base_speed < GRAY_MIN_SPEED) base_speed = GRAY_MIN_SPEED;
+    gray_base_speed = base_speed;
 
     /* 增益调度 */
     gain = (abs_e > GRAY_FAR_THRESHOLD) ? GRAY_STEER_GAIN_FAR : GRAY_STEER_GAIN;
@@ -494,6 +504,7 @@ void SearchRun(void)
 u8 Gray_IsReady(void)   { return gray_ready; }
 int Gray_GetError(void) { return gray_last_raw_error; }
 int Gray_GetCorrection(void) { return gray_correction; }
+int Gray_GetBaseSpeed(void) { return gray_base_speed; }
 
 /* 清积分：切模式、重新上路、手动复位时调用 */
 void Gray_ResetIntegral(void)

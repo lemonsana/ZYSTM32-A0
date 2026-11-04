@@ -71,26 +71,35 @@
  *
  *  v3.2 新增（过急弯用）：
  *    GRAY_SLOW_GAIN      = 误差越大越慢：base 减掉 |误差|×SLOW_GAIN/100
+ *    GRAY_SLOW_D_GAIN    = 误差变化越快也越慢（进弯前先减速）
  *    GRAY_MIN_SPEED      = 减速后的最低基础速度
  *    GRAY_INNER_REVERSE  = 内轮允许反转的最大幅度（度数），急弯时能显著减小转弯半径
+ *
+ *  v3.3 按"前视 12cm"重调（几何分析见 README）：
+ *    前视 12cm + 阵列半宽 3.5cm → 能连续跟住的最小弯半径约 20.6cm；
+ *    比这更急的弯（视频里 8~10cm 的发夹弯）必然"丢线-找回"，
+ *    所以参数往"少超调、快找回"方向调，丢线找回时间放宽到 3 秒。
  * ---------------------------------------------------------------------------- */
-#define GRAY_BASE_SPEED        40
-#define GRAY_STEER_GAIN        35
-#define GRAY_STEER_GAIN_FAR    55
-#define GRAY_FAR_THRESHOLD     45
-#define GRAY_KI                 2
-#define GRAY_KD                10
+#define GRAY_LOOKAHEAD_CM      12   /* 灰度板到电机驱动轴的距离（用于说明/换算） */
+
+#define GRAY_BASE_SPEED        32
+#define GRAY_STEER_GAIN        32
+#define GRAY_STEER_GAIN_FAR    50
+#define GRAY_FAR_THRESHOLD     40
+#define GRAY_KI                 0
+#define GRAY_KD                12
 #define GRAY_I_LIMIT         2500
 #define GRAY_BLACK_CUTOFF     180
 #define GRAY_CENTER_DEADBAND    4
 #define GRAY_CHANNEL_MIRROR     0
 
-#define GRAY_SLOW_GAIN         15
-#define GRAY_MIN_SPEED         25
-#define GRAY_INNER_REVERSE     30
+#define GRAY_SLOW_GAIN         20
+#define GRAY_SLOW_D_GAIN       40
+#define GRAY_MIN_SPEED         18
+#define GRAY_INNER_REVERSE     45
 
-#define GRAY_LOST_SPIN_SPEED   45
-#define GRAY_LOST_STOP_MS    1500
+#define GRAY_LOST_SPIN_SPEED   50
+#define GRAY_LOST_STOP_MS    3000
 #define GRAY_FRAME_MS          10
 
 /* 调试接口 */
@@ -100,6 +109,7 @@ void SearchRun(void);               /* 循迹任务：主循环每 TICK_MS 调一次 */
 u8   Gray_IsReady(void);            /* 1 = 传感器已就绪 */
 int  Gray_GetError(void);           /* 最近一次线位置误差 -100~+100，999=丢线 */
 int  Gray_GetCorrection(void);      /* 最近一次 PID 输出（调参看这个最直观） */
+int  Gray_GetBaseSpeed(void);       /* 最近一次调度后的基础速度 */
 void Gray_ResetIntegral(void);      /* 清积分（切模式、重新上路时调用） */
 u8   Gray_ReadRaw(u8 *values8);     /* 读原始 8 路数据，返回 1=成功 */
 

@@ -24,7 +24,7 @@
  *    4) 保留 v2.0 的非阻塞电机层与"不停车避障"。
  * ========================================================================== */
 
-#define FIRMWARE_VER        "v3.2"
+#define FIRMWARE_VER        "v3.3"
 #define TICK_MS             10      /* 主循环节拍(ms)，必须与 GRAY_FRAME_MS 一致 */
 #define DEBUG_UART          1       /* 1=打开串口调试打印，0=关闭 */
 
@@ -130,12 +130,13 @@ void Debug_Task(void)
     if (++cnt >= 20)
     {
         cnt = 0;
-        printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d ready=%d avoid=%d\r\n",
+        printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ready=%d avoid=%d\r\n",
                keyMode,
                Motor_GetLeft(),
                Motor_GetRight(),
                Gray_GetError(),
                Gray_GetCorrection(),
+               Gray_GetBaseSpeed(),
                Gray_IsReady(),
                AVOID_IO);
     }
