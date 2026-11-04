@@ -24,7 +24,7 @@
  *    4) 保留 v2.0 的非阻塞电机层与"不停车避障"。
  * ========================================================================== */
 
-#define FIRMWARE_VER        "v3.0"
+#define FIRMWARE_VER        "v3.1"
 #define TICK_MS             10      /* 主循环节拍(ms)，必须与 GRAY_FRAME_MS 一致 */
 #define DEBUG_UART          1       /* 1=打开串口调试打印，0=关闭 */
 
@@ -54,6 +54,7 @@ void KeyScanTask(void)
             default:        keyMode = KEYMODE_1; break;
         }
         Motor_Stop();               /* 换模式先停车 */
+        Gray_ResetIntegral();       /* 清掉上一模式残留的积分量 */
     }
     if (!KEY)                       /* 松开，允许下一次切换 */
     {
@@ -129,11 +130,12 @@ void Debug_Task(void)
     if (++cnt >= 20)
     {
         cnt = 0;
-        printf("mode=%d L=%4d R=%4d | err=%4d ready=%d avoid=%d\r\n",
+        printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d ready=%d avoid=%d\r\n",
                keyMode,
                Motor_GetLeft(),
                Motor_GetRight(),
                Gray_GetError(),
+               Gray_GetCorrection(),
                Gray_IsReady(),
                AVOID_IO);
     }

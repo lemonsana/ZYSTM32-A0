@@ -32,6 +32,11 @@ static u16    gray_lost_ms = 0;
 
 static int16_t gray_last_raw_error = 0;   /* 最近一次原始误差（调试用） */
 
+/* ---- v3.1 PID 状态 ---- */
+static int32_t gray_i_sum      = 0;       /* 积分累加，单位：误差·毫秒 */
+static int16_t gray_prev_error = 0;       /* 上一帧误差（D 项用） */
+static int16_t gray_correction = 0;       /* 最近一次 PID 输出（调试用） */
+
 /* 探头位置权重：下标 0 = 通道1（最左）…… 下标 7 = 通道8（最右）
  * 与"可循迹版本"一致；若实车方向相反，把 GRAY_CHANNEL_MIRROR 改成 1 */
 static const int8_t gray_position_weight[8] = { -7, -5, -3, -1, 1, 3, 5, 7 };
@@ -358,10 +363,14 @@ void SearchRun(void)
     int16_t correction;
     int16_t left_speed;
     int16_t right_speed;
+    int16_t p_term;
+    int16_t i_term;
+    int16_t d_term;
     u8 result;
 
     if (!gray_ready)
     {
+        gray_i_sum = 0;
         Motor_Stop();
         return;
     }
@@ -370,6 +379,7 @@ void SearchRun(void)
 
     if (result == 0)                    /* I2C 读失败：停车等下一帧 */
     {
+        gray_i_sum = 0;
         Motor_Stop();
         return;
     }
@@ -378,6 +388,7 @@ void SearchRun(void)
     {
         gray_filter_ready = 0;
         gray_last_raw_error = 999;
+        gray_i_sum = 0;                 /* 丢线时清积分，防止恢复后猛冲 */
 
         if (gray_lost_ms < GRAY_LOST_STOP_MS) gray_lost_ms += GRAY_FRAME_MS;
 
@@ -421,8 +432,39 @@ void SearchRun(void)
     }
     gray_last_error = error;
 
-    /* 比例转向 */
-    correction = (int16_t)((int32_t)error * GRAY_STEER_GAIN / 100L);
+    /* ---------------- PID 控制（v3.1：默认 P + I，D 关闭） ----------------
+     *   P: error * GRAY_STEER_GAIN / 100
+     *   I: 按 误差·毫秒 累加后 * GRAY_KI / 1000（带限幅和回中泄放，防积分饱和）
+     *   D: (error - 上帧) * GRAY_KD / 100（默认 0）
+     * ------------------------------------------------------------------- */
+    p_term = (int16_t)((int32_t)error * GRAY_STEER_GAIN / 100L);
+
+#if GRAY_KI > 0
+    if (error == 0)
+    {
+        /* 已经回中线：让积分慢慢泄放，避免"到点了还在往一边拧" */
+        gray_i_sum = (gray_i_sum * 99L) / 100L;
+    }
+    else
+    {
+        gray_i_sum += (int32_t)error * GRAY_FRAME_MS;
+        if (gray_i_sum >  GRAY_I_LIMIT) gray_i_sum =  GRAY_I_LIMIT;
+        if (gray_i_sum < -GRAY_I_LIMIT) gray_i_sum = -GRAY_I_LIMIT;
+    }
+    i_term = (int16_t)(gray_i_sum * GRAY_KI / 1000L);
+#else
+    i_term = 0;
+#endif
+
+#if GRAY_KD > 0
+    d_term = (int16_t)((int32_t)(error - gray_prev_error) * GRAY_KD / 100L);
+#else
+    d_term = 0;
+#endif
+
+    correction = p_term + i_term + d_term;
+    gray_correction = correction;
+    gray_prev_error = error;
 
     left_speed  = GRAY_BASE_SPEED + correction;
     right_speed = GRAY_BASE_SPEED - correction;
@@ -438,4 +480,15 @@ void SearchRun(void)
 /* ---------------- 调试接口 ---------------- */
 u8 Gray_IsReady(void)   { return gray_ready; }
 int Gray_GetError(void) { return gray_last_raw_error; }
+int Gray_GetCorrection(void) { return gray_correction; }
+
+/* 清积分：切模式、重新上路、手动复位时调用 */
+void Gray_ResetIntegral(void)
+{
+    gray_i_sum      = 0;
+    gray_prev_error = 0;
+    gray_filter_ready = 0;
+    gray_lost_ms    = 0;
+}
+
 u8 Gray_ReadRaw(u8 *values8) { return gray_iface_read(values8); }

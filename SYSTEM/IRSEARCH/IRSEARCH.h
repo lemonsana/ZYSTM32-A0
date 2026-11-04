@@ -60,9 +60,19 @@
  *  GRAY_CHANNEL_MIRROR 1 = 镜像探头顺序（车往反方向修正时改这个）
  *  GRAY_LOST_STOP_MS   丢线超过多久就停车
  *  GRAY_FRAME_MS       必须与 main.c 的 TICK_MS 一致
+ *
+ *  PID 参数（v3.1）：
+ *    GRAY_STEER_GAIN = P：纯比例，满偏误差(±100) 对应 ±35 的转向量
+ *    GRAY_KI         = I：积分，8 表示每累积 1000 (误差·毫秒) 贡献 8 的转向量
+ *    GRAY_KD         = D：微分，默认 0（关闭）。误差本身已有低通滤波，
+ *                        开 D 前请先把 GRAY_KI 调好
+ *    GRAY_I_LIMIT    = 积分累加上限（误差·毫秒），防止饱和后"甩不回来"
  * ---------------------------------------------------------------------------- */
 #define GRAY_BASE_SPEED        40
 #define GRAY_STEER_GAIN        35
+#define GRAY_KI                 4
+#define GRAY_KD                 0
+#define GRAY_I_LIMIT         2500
 #define GRAY_BLACK_CUTOFF     180
 #define GRAY_CENTER_DEADBAND    4
 #define GRAY_CHANNEL_MIRROR     0
@@ -77,6 +87,8 @@ void SearchRun(void);               /* 循迹任务：主循环每 TICK_MS 调一次 */
 
 u8   Gray_IsReady(void);            /* 1 = 传感器已就绪 */
 int  Gray_GetError(void);           /* 最近一次线位置误差 -100~+100，999=丢线 */
+int  Gray_GetCorrection(void);      /* 最近一次 PID 输出（调参看这个最直观） */
+void Gray_ResetIntegral(void);      /* 清积分（切模式、重新上路时调用） */
 u8   Gray_ReadRaw(u8 *values8);     /* 读原始 8 路数据，返回 1=成功 */
 
 #endif
