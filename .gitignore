@@ -34,3 +34,6 @@ RTE/
 Thumbs.db
 desktop.ini
 MFC*.tmp
+
+# ---- 参考版本（用户提供的可循迹版本，不参与编译）----
+可循迹版本/
