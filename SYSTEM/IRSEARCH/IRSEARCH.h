@@ -61,24 +61,36 @@
  *  GRAY_LOST_STOP_MS   丢线超过多久就停车
  *  GRAY_FRAME_MS       必须与 main.c 的 TICK_MS 一致
  *
- *  PID 参数（v3.1）：
- *    GRAY_STEER_GAIN = P：纯比例，满偏误差(±100) 对应 ±35 的转向量
- *    GRAY_KI         = I：积分，8 表示每累积 1000 (误差·毫秒) 贡献 8 的转向量
- *    GRAY_KD         = D：微分，默认 0（关闭）。误差本身已有低通滤波，
- *                        开 D 前请先把 GRAY_KI 调好
- *    GRAY_I_LIMIT    = 积分累加上限（误差·毫秒），防止饱和后"甩不回来"
+ *  PID 参数：
+ *    GRAY_STEER_GAIN     = P：小误差时的比例增益
+ *    GRAY_STEER_GAIN_FAR = P：大误差（急弯）时的比例增益，更"硬"
+ *    GRAY_FAR_THRESHOLD  = |误差| 超过这个值就切成 FAR 增益
+ *    GRAY_KI             = I：每累积 1000 (误差·毫秒) 贡献的转向量
+ *    GRAY_KD             = D：微分系数
+ *    GRAY_I_LIMIT        = 积分累加上限（误差·毫秒），防止饱和
+ *
+ *  v3.2 新增（过急弯用）：
+ *    GRAY_SLOW_GAIN      = 误差越大越慢：base 减掉 |误差|×SLOW_GAIN/100
+ *    GRAY_MIN_SPEED      = 减速后的最低基础速度
+ *    GRAY_INNER_REVERSE  = 内轮允许反转的最大幅度（度数），急弯时能显著减小转弯半径
  * ---------------------------------------------------------------------------- */
 #define GRAY_BASE_SPEED        40
 #define GRAY_STEER_GAIN        35
-#define GRAY_KI                 4
-#define GRAY_KD                 0
+#define GRAY_STEER_GAIN_FAR    55
+#define GRAY_FAR_THRESHOLD     45
+#define GRAY_KI                 2
+#define GRAY_KD                10
 #define GRAY_I_LIMIT         2500
 #define GRAY_BLACK_CUTOFF     180
 #define GRAY_CENTER_DEADBAND    4
 #define GRAY_CHANNEL_MIRROR     0
 
-#define GRAY_LOST_SPIN_SPEED   28
-#define GRAY_LOST_STOP_MS     800
+#define GRAY_SLOW_GAIN         15
+#define GRAY_MIN_SPEED         25
+#define GRAY_INNER_REVERSE     30
+
+#define GRAY_LOST_SPIN_SPEED   45
+#define GRAY_LOST_STOP_MS    1500
 #define GRAY_FRAME_MS          10
 
 /* 调试接口 */

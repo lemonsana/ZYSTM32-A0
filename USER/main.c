@@ -24,7 +24,7 @@
  *    4) 保留 v2.0 的非阻塞电机层与"不停车避障"。
  * ========================================================================== */
 
-#define FIRMWARE_VER        "v3.1"
+#define FIRMWARE_VER        "v3.2"
 #define TICK_MS             10      /* 主循环节拍(ms)，必须与 GRAY_FRAME_MS 一致 */
 #define DEBUG_UART          1       /* 1=打开串口调试打印，0=关闭 */
 

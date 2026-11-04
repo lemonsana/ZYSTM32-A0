@@ -360,6 +360,9 @@ void SearchRun(void)
 {
     int16_t raw_error = 0;
     int16_t error;
+    int16_t abs_e;
+    int16_t base_speed;
+    int16_t gain;
     int16_t correction;
     int16_t left_speed;
     int16_t right_speed;
@@ -432,12 +435,21 @@ void SearchRun(void)
     }
     gray_last_error = error;
 
-    /* ---------------- PID 控制（v3.1：默认 P + I，D 关闭） ----------------
-     *   P: error * GRAY_STEER_GAIN / 100
-     *   I: 按 误差·毫秒 累加后 * GRAY_KI / 1000（带限幅和回中泄放，防积分饱和）
-     *   D: (error - 上帧) * GRAY_KD / 100（默认 0）
+    /* ---------------- PID 控制（v3.2：增益调度 + 速度调度） ----------------
+     *   增益调度：|误差| ≤ FAR_THRESHOLD 用 GAIN，超过用 GAIN_FAR（急弯更硬）
+     *   速度调度：base 随 |误差| 下降，最低 MIN_SPEED（急弯自动减速）
+     *   内轮允许反转：|误差| 大时内侧轮可以给到 -INNER_REVERSE，显著减小转弯半径
      * ------------------------------------------------------------------- */
-    p_term = (int16_t)((int32_t)error * GRAY_STEER_GAIN / 100L);
+    abs_e = (error >= 0) ? error : -error;
+
+    /* 速度调度 */
+    base_speed = (int16_t)(GRAY_BASE_SPEED - (abs_e * GRAY_SLOW_GAIN) / 100);
+    if (base_speed < GRAY_MIN_SPEED) base_speed = GRAY_MIN_SPEED;
+
+    /* 增益调度 */
+    gain = (abs_e > GRAY_FAR_THRESHOLD) ? GRAY_STEER_GAIN_FAR : GRAY_STEER_GAIN;
+
+    p_term = (int16_t)((int32_t)error * gain / 100L);
 
 #if GRAY_KI > 0
     if (error == 0)
@@ -466,13 +478,14 @@ void SearchRun(void)
     gray_correction = correction;
     gray_prev_error = error;
 
-    left_speed  = GRAY_BASE_SPEED + correction;
-    right_speed = GRAY_BASE_SPEED - correction;
+    left_speed  = base_speed + correction;
+    right_speed = base_speed - correction;
 
-    if (left_speed  < 0)  left_speed  = 0;
-    if (left_speed  > 95) left_speed  = 95;
-    if (right_speed < 0)  right_speed = 0;
-    if (right_speed > 95) right_speed = 95;
+    /* 急弯时允许内轮倒转（"原地搓"能过 180°），但要限幅防止原地打转 */
+    if (left_speed  < -GRAY_INNER_REVERSE) left_speed  = -GRAY_INNER_REVERSE;
+    if (left_speed  >  95)                 left_speed  =  95;
+    if (right_speed < -GRAY_INNER_REVERSE) right_speed = -GRAY_INNER_REVERSE;
+    if (right_speed >  95)                 right_speed =  95;
 
     Motor_SetSpeed(left_speed, right_speed);
 }
