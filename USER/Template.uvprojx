@@ -369,7 +369,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\vision</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -606,6 +606,16 @@
               <FileName>remote.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\SYSTEM\remote\remote.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>VISION</GroupName>
+          <Files>
+            <File>
+              <FileName>vision.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\vision\vision.c</FilePath>
             </File>
           </Files>
         </Group>

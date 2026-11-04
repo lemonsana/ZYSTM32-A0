@@ -4,16 +4,17 @@
 #include "keysacn.h"
 #include "IRSEARCH.h"
 #include "IRAvoid.h"
+#include "vision.h"
 #include "remote.h"
 #include "usart.h"
 #include <stdio.h>
 
 /* ==========================================================================
- *  ZYSTM32-A0 智能小车  综合程序  v3.5
+ *  ZYSTM32-A0 智能小车  综合程序  v4.0（视觉避障分支 feature/vision）
  *  --------------------------------------------------------------------
  *  三种模式（循迹 / 避障 / 遥控），按 PC2 按键循环切换，LED 指示：
- *      模式1 循迹   D4 亮 / D3 灭      SearchRun()   感为 8 路灰度（I2C + PID）
- *      模式2 避障   D4 灭（D3 作障碍指示） AVoidRun()    超声波 + 舵机扫描
+ *      模式1 循迹   D4 亮 / D3 灭      SearchRun()       感为 8 路灰度（I2C + PID）
+ *      模式2 避障   D4 灭（D3 作障碍指示） Vision_AVoidRun()  K210 视觉
  *      模式3 遥控   D4 亮 / D3 亮       IR_IN()
  *
  *  【版本演进要点】
@@ -21,9 +22,10 @@
  *    v3.1  加 PID（I/D 可调）+ 串口 corr 调试字段
  *    v3.2  急弯增强：速度调度 / 增益调度 / 内轮反转
  *    v3.3  按实测前视 12cm 重调参数，加"进弯预减速"
- *    v3.4  避障改为状态机（去抖 + 两级转弯 + 回正补偿）；全工程补充调参注释
- *    v3.5  避障升级为「超声波 HC-SR04 + 舵机 180° 扫描」：
- *            停车扫描版 / 边走边扫版，由 IRAvoid.h 的 AVOID_SCAN_WHILE_DRIVING 切换
+ *    v3.4  避障改为状态机（去抖 + 两级转弯 + 回正补偿）
+ *    v3.5  避障升级为「超声波 + 舵机扫描」（另一条并行线，保留在主分支）
+ *    v4.0  【本分支】避障改为 K210 视觉：USART2 收帧 → 方向决策 → 复用状态机
+ *             开关：下面的 AVOID_SRC_VISION（1=视觉，0=超声波/红外）
  *
  *  【主循环结构】
  *      每 10ms 一拍：
@@ -33,9 +35,15 @@
  *        delay_ms(10)   节拍
  * ========================================================================== */
 
-#define FIRMWARE_VER        "v3.5"
+#define FIRMWARE_VER        "v4.0"
 #define TICK_MS             10      /* 主循环节拍(ms)，必须与 GRAY_FRAME_MS 一致 */
 #define DEBUG_UART          1       /* 1=打开串口调试打印，0=关闭 */
+
+/* 避障数据来源（本分支 v4.0 用视觉）：
+ *   1 = K210 视觉（USART2：PA2/PA3）
+ *   0 = 原来的超声波/红外避障（IRAvoid.c）
+ * 两种实现都保留，改这一个数字即可切换。 */
+#define AVOID_SRC_VISION    1
 
 #define KEYMODE_1           1       /* 循迹 */
 #define KEYMODE_2           2       /* 避障 */
@@ -109,9 +117,14 @@ void ModeTask(void)
             SearchRun();
             break;
 
-        case KEYMODE_2:                     /* 避障（D3 由 AVoidRun 控制） */
+        case KEYMODE_2:                     /* 避障（D3 作障碍指示） */
             LED_D4_RESET;
-            AVoidRun();
+#if AVOID_SRC_VISION
+            Vision_Task();                  /* 维护超时 */
+            Vision_AVoidRun();              /* K210 视觉避障 */
+#else
+            AVoidRun();                     /* 超声波/红外避障 */
+#endif
             break;
 
         case KEYMODE_3:                     /* 遥控 */
@@ -139,6 +152,21 @@ void Debug_Task(void)
     if (++cnt >= 20)
     {
         cnt = 0;
+#if AVOID_SRC_VISION
+        printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ready=%d | vis=%d dir=%d dist=%3d st=%d n=%u\r\n",
+               keyMode,
+               Motor_GetLeft(),
+               Motor_GetRight(),
+               Gray_GetError(),
+               Gray_GetCorrection(),
+               Gray_GetBaseSpeed(),
+               Gray_IsReady(),
+               Vision_IsValid(),
+               Vision_GetDir(),
+               Vision_GetDist(),
+               Vision_GetState(),
+               (unsigned int)Vision_GetFrameCount());
+#else
         printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ready=%d st=%d dist=%3d ang=%3d\r\n",
                keyMode,
                Motor_GetLeft(),
@@ -150,6 +178,7 @@ void Debug_Task(void)
                AVoid_GetState(),
                AVoid_GetDistance(),
                AVoid_GetAngle());
+#endif
     }
 #endif
 }
@@ -160,7 +189,11 @@ int main(void)
     delay_init();
     KEY_Init();             /* 按键 PC2 / 蜂鸣器 PC3 / LED D3 PB6 / D4 PA6 */
     IRSearchInit();         /* 灰度传感器初始化（I2C：PB10/PB11） */
-    IRAvoidInit();          /* 避障探头 PB1 */
+#if AVOID_SRC_VISION
+    Vision_Init();          /* K210 视觉：USART2 PA2/PA3，115200 */
+#else
+    IRAvoidInit();          /* 超声波/红外避障初始化 */
+#endif
     Motor_Init();           /* TIM4 PWM：左 CH4-PB9，右 CH3-PB8 */
     Remote_Init();          /* 红外遥控 PA1 + TIM5 输入捕获 */
 
@@ -170,6 +203,9 @@ int main(void)
     printf("[BOOT] gray ready = %d %s\r\n",
            Gray_IsReady(),
            Gray_IsReady() ? "(ok)" : "(FAIL: 查 PULL 跳线 / SCL-SDA / 5V)");
+#if AVOID_SRC_VISION
+    printf("[BOOT] avoid src = VISION (USART2 PA2/PA3, 115200)\r\n");
+#endif
 #endif
 
     Motor_Stop();
