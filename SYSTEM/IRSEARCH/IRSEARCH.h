@@ -147,6 +147,7 @@ int  Gray_GetError(void);           /* 最近一次线位置误差 -100~+100，999=丢线 */
 int  Gray_GetCorrection(void);      /* 最近一次 PID 输出（调参看这个最直观） */
 int  Gray_GetBaseSpeed(void);       /* 最近一次调度后的基础速度 */
 void Gray_ResetIntegral(void);      /* 清积分（切模式、重新上路时调用） */
+u8   Gray_IsOnLine(void);           /* 1 = 当前至少有一路探头压到黑线（融合模式找线用） */
 u8   Gray_ReadRaw(u8 *values8);     /* 读原始 8 路数据，返回 1=成功 */
 
 #endif

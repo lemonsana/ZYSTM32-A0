@@ -234,6 +234,10 @@ u8 AVoid_GetState(void)    { return av_state; }
 u8 AVoid_GetDistance(void) { return av_dist; }
 u8 AVoid_GetAngle(void)    { return av_angle; }
 
+/* 供融合模式复用：测距 / 设舵机角 */
+u8 AVoid_Measure(void)      { return Ultra_Measure(); }
+void AVoid_Servo(u8 deg)    { Servo_SetAngle(deg); }
+
 void IRAvoidInit(void)
 {
     Ultra_Init();

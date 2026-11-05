@@ -72,4 +72,8 @@ u8   AVoid_GetState(void);      /* 0=直行 1=扫描 2=转向 3=回正 */
 u8   AVoid_GetDistance(void);   /* 最近一次前方距离(cm)，0=无效 */
 u8   AVoid_GetAngle(void);      /* 当前舵机角度 */
 
+/* ---- 供「循迹+避障」融合模式复用的底层接口 ---- */
+u8   AVoid_Measure(void);       /* 阻塞测一次距离(cm)，0=无效；最长 30ms */
+void AVoid_Servo(u8 deg);       /* 直接设置舵机角度 0~180 */
+
 #endif

@@ -534,4 +534,21 @@ void Gray_ResetIntegral(void)
     gray_lost_ms    = 0;
 }
 
+/* 是否压到黑线：任意一路归一化值 < GRAY_BLACK_CUTOFF 即算压线
+ * 融合模式（循迹+避障）绕完障碍后，用它判断有没有重新找到线 */
+u8 Gray_IsOnLine(void)
+{
+    u8 values[8];
+    u8 i;
+
+    if (!gray_ready) return 0;
+    if (!gray_iface_read(values)) return 0;
+
+    for (i = 0; i < 8; i++)
+    {
+        if (values[i] < GRAY_BLACK_CUTOFF) return 1;
+    }
+    return 0;
+}
+
 u8 Gray_ReadRaw(u8 *values8) { return gray_iface_read(values8); }
