@@ -1,21 +1,21 @@
-#include "motor.h"
+ï»¿#include "motor.h"
 #include "delay.h"
 #include <stdlib.h>     /* abs() */
 
 /* ------------------------------------------------------------------
- * v3.0 µç»úÇı¶¯
- *   Í¨µÀÓ³Éä°´Êµ³µ¿ÉÓÃ°æ±¾»Ö¸´£º×óÂÖ CH4/PB9£¬ÓÒÂÖ CH3/PB8
- *   ·Ç×èÈû£ºMotor_SetSpeed() Ö»Ğ´ PWM ±È½ÏÖµºÍ·½Ïò½Å£¬Á¢¼´·µ»Ø
- *   ×èÈû°æ£ºZYSTM32_xxx() ±£Áô£¬ÄÚ²¿ = ÉèÖÃËÙ¶È + delay_ms
+ * v3.0 ç”µæœºé©±åŠ¨
+ *   é€šé“æ˜ å°„æŒ‰å®è½¦å¯ç”¨ç‰ˆæœ¬æ¢å¤ï¼šå·¦è½® CH4/PB9ï¼Œå³è½® CH3/PB8
+ *   éé˜»å¡ï¼šMotor_SetSpeed() åªå†™ PWM æ¯”è¾ƒå€¼å’Œæ–¹å‘è„šï¼Œç«‹å³è¿”å›
+ *   é˜»å¡ç‰ˆï¼šZYSTM32_xxx() ä¿ç•™ï¼Œå†…éƒ¨ = è®¾ç½®é€Ÿåº¦ + delay_ms
  * ------------------------------------------------------------------ */
 
-static int motor_l = 0;     /* ×óÂÖµ±Ç°Éè¶¨ËÙ¶È */
-static int motor_r = 0;     /* ÓÒÂÖµ±Ç°Éè¶¨ËÙ¶È */
+static int motor_l = 0;     /* å·¦è½®å½“å‰è®¾å®šé€Ÿåº¦ */
+static int motor_r = 0;     /* å³è½®å½“å‰è®¾å®šé€Ÿåº¦ */
 
 int Motor_GetLeft(void)  { return motor_l; }
 int Motor_GetRight(void) { return motor_r; }
 
-/* ÏŞ·ùµ½ -100 ~ +100 */
+/* é™å¹…åˆ° -100 ~ +100 */
 static int Motor_Clamp(int v)
 {
     if (v >  100) return  100;
@@ -23,19 +23,19 @@ static int Motor_Clamp(int v)
     return v;
 }
 
-/* ËÙ¶È ¡ú CCR Öµ£¨PWM2 ·´ÏàÄ£Ê½£©
- *   speed=0   ¡ú 7200 > ARR(7199) ¡ú ºãµÍ ¡ú 0%
- *   speed=100 ¡ú 0                ¡ú ºã¸ß ¡ú 100%
- *   speed=50  ¡ú 3600             ¡ú 50%
+/* é€Ÿåº¦ â†’ CCR å€¼ï¼ˆPWM2 åç›¸æ¨¡å¼ï¼‰
+ *   speed=0   â†’ 7200 > ARR(7199) â†’ æ’ä½ â†’ 0%
+ *   speed=100 â†’ 0                â†’ æ’é«˜ â†’ 100%
+ *   speed=50  â†’ 3600             â†’ 50%
  */
 static int Motor_PwmOf(int speed)
 {
     return MOTOR_PWM_ARR - (abs(Motor_Clamp(speed)) * MOTOR_PWM_ARR) / 100;
 }
 
-/* ÉèÖÃµ¥¸öÂÖ×Ó
- * ch    : 0 = ×óÂÖ£¬1 = ÓÒÂÖ
- * speed : -100 ~ +100£¬ÕıÊıÇ°½ø
+/* è®¾ç½®å•ä¸ªè½®å­
+ * ch    : 0 = å·¦è½®ï¼Œ1 = å³è½®
+ * speed : -100 ~ +100ï¼Œæ­£æ•°å‰è¿›
  */
 static void Motor_SetOne(unsigned char ch, int speed)
 {
@@ -46,7 +46,7 @@ static void Motor_SetOne(unsigned char ch, int speed)
     pwm     = Motor_PwmOf(speed);
     forward = (speed >= 0) ? 1 : 0;
 
-    if (ch == 0)        /* ---------------- ×óÂÖ£ºCH4 ¡ú PB9 ---------------- */
+    if (ch == 0)        /* ---------------- å·¦è½®ï¼šCH4 â†’ PB9 ---------------- */
     {
 #if MOTOR_PWM_CH_SWAP
         TIM_SetCompare3(TIM4, pwm);
@@ -71,7 +71,7 @@ static void Motor_SetOne(unsigned char ch, int speed)
         }
         motor_l = speed;
     }
-    else                /* ---------------- ÓÒÂÖ£ºCH3 ¡ú PB8 ---------------- */
+    else                /* ---------------- å³è½®ï¼šCH3 â†’ PB8 ---------------- */
     {
 #if MOTOR_PWM_CH_SWAP
         TIM_SetCompare4(TIM4, pwm);
@@ -98,20 +98,20 @@ static void Motor_SetOne(unsigned char ch, int speed)
     }
 }
 
-/* ÉèÖÃË«ÂÖËÙ¶È£¨ÕıÊıÇ°½ø£©¡£ÕâÊÇËùÓĞÉÏ²ãÄ£¿éÎ¨Ò»µÄËÙ¶È³ö¿Ú */
+/* è®¾ç½®åŒè½®é€Ÿåº¦ï¼ˆæ­£æ•°å‰è¿›ï¼‰ã€‚è¿™æ˜¯æ‰€æœ‰ä¸Šå±‚æ¨¡å—å”¯ä¸€çš„é€Ÿåº¦å‡ºå£ */
 void Motor_SetSpeed(int left, int right)
 {
     Motor_SetOne(0, left);
     Motor_SetOne(1, right);
 }
 
-/* Í£³µ */
+/* åœè½¦ */
 void Motor_Stop(void)
 {
     Motor_SetSpeed(0, 0);
 }
 
-/* ==================== ³õÊ¼»¯ ==================== */
+/* ==================== åˆå§‹åŒ– ==================== */
 void TIM4_PWM_Init(unsigned short arr,unsigned short psc)
 {
     TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
@@ -121,25 +121,25 @@ void TIM4_PWM_Init(unsigned short arr,unsigned short psc)
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA|RCC_APB2Periph_GPIOB , ENABLE);
 
-    /* ×óµç»ú·½Ïò PB7 */
+    /* å·¦ç”µæœºæ–¹å‘ PB7 */
     GPIO_InitStructure.GPIO_Pin   = LEFT_MOTOR_GO;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
     GPIO_Init(LEFT_MOTOR_GO_GPIO, &GPIO_InitStructure);
 
-    /* ×óµç»ú PWM  PB9 ¡ª¡ª ¸´ÓÃÍÆÍì£¨TIM4_CH4£© */
+    /* å·¦ç”µæœº PWM  PB9 â€”â€” å¤ç”¨æ¨æŒ½ï¼ˆTIM4_CH4ï¼‰ */
     GPIO_InitStructure.GPIO_Pin   = LEFT_MOTOR_PWM;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
     GPIO_Init(LEFT_MOTOR_PWM_GPIO, &GPIO_InitStructure);
 
-    /* ÓÒµç»ú·½Ïò PA4 */
+    /* å³ç”µæœºæ–¹å‘ PA4 */
     GPIO_InitStructure.GPIO_Pin   = RIGHT_MOTOR_GO;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP;
     GPIO_Init(RIGHT_MOTOR_GPIO, &GPIO_InitStructure);
 
-    /* ÓÒµç»ú PWM  PB8 ¡ª¡ª ¸´ÓÃÍÆÍì£¨TIM4_CH3£© */
+    /* å³ç”µæœº PWM  PB8 â€”â€” å¤ç”¨æ¨æŒ½ï¼ˆTIM4_CH3ï¼‰ */
     GPIO_InitStructure.GPIO_Pin   = RIGHT_MOTOR_PWM;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
@@ -155,8 +155,8 @@ void TIM4_PWM_Init(unsigned short arr,unsigned short psc)
     TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
     TIM_OCInitStructure.TIM_Pulse       = 0;
     TIM_OCInitStructure.TIM_OCPolarity  = TIM_OCPolarity_High;
-    TIM_OC3Init(TIM4, &TIM_OCInitStructure);    /* CH3 ¡ú PB8 ÓÒÂÖ */
-    TIM_OC4Init(TIM4, &TIM_OCInitStructure);    /* CH4 ¡ú PB9 ×óÂÖ */
+    TIM_OC3Init(TIM4, &TIM_OCInitStructure);    /* CH3 â†’ PB8 å³è½® */
+    TIM_OC4Init(TIM4, &TIM_OCInitStructure);    /* CH4 â†’ PB9 å·¦è½® */
 
     TIM_CtrlPWMOutputs(TIM4, ENABLE);
     TIM_OC3PreloadConfig(TIM4, TIM_OCPreload_Enable);
@@ -173,19 +173,19 @@ void Motor_Init(void)
     Motor_Stop();
 }
 
-/* ==================== Ô­³§¼æÈİ½Ó¿Ú£¨ÓïÒåÓë v1.0 ÍêÈ«Ò»ÖÂ£© ==================== */
+/* ==================== åŸå‚å…¼å®¹æ¥å£ï¼ˆè¯­ä¹‰ä¸ v1.0 å®Œå…¨ä¸€è‡´ï¼‰ ==================== */
 
 void SetMotorSpeed(unsigned char ucChannel,signed char cSpeed)
 {
     int pwm = Motor_PwmOf(cSpeed);
 
-    if (ucChannel == 0)         /* ÓÒÂÖ£ºCH3/PB8£¬>0 Ç°½ø */
+    if (ucChannel == 0)         /* å³è½®ï¼šCH3/PB8ï¼Œ>0 å‰è¿› */
     {
         TIM_SetCompare3(TIM4, pwm);
         if (cSpeed > 0)      RIGHT_MOTOR_GO_RESET;
         else if (cSpeed < 0) RIGHT_MOTOR_GO_SET;
     }
-    else                        /* ×óÂÖ£ºCH4/PB9£¬<0 Ç°½ø£¨Ô­³§·ûºÅÔ¼¶¨£© */
+    else                        /* å·¦è½®ï¼šCH4/PB9ï¼Œ<0 å‰è¿›ï¼ˆåŸå‚ç¬¦å·çº¦å®šï¼‰ */
     {
         TIM_SetCompare4(TIM4, pwm);
         if (cSpeed > 0)      LEFT_MOTOR_GO_SET;
@@ -229,7 +229,7 @@ void ZYSTM32_Spin_Right(signed char speed,int time)
     delay_ms(time);
 }
 
-/* ºóÍË£ºv1 ÀïĞ´³É 100-speed£¬Êµ¼ÊËÙ¶È»á±»·­¹ıÀ´£¬ÕâÀïĞŞÕıÎªÖ±½ÓÓÃ speed */
+/* åé€€ï¼šv1 é‡Œå†™æˆ 100-speedï¼Œå®é™…é€Ÿåº¦ä¼šè¢«ç¿»è¿‡æ¥ï¼Œè¿™é‡Œä¿®æ­£ä¸ºç›´æ¥ç”¨ speed */
 void ZYSTM32_back(signed char speed,int time)
 {
     Motor_SetSpeed(-speed, -speed);

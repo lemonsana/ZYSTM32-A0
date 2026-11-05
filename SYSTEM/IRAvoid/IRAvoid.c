@@ -1,31 +1,31 @@
-#include "IRAvoid.h"
+ï»¿#include "IRAvoid.h"
 #include "delay.h"
 #include "motor.h"
 #include "keysacn.h"
 #include "stm32f10x.h"
 
 /* ============================================================================
- *  ±ÜÕÏÄ£¿é  v3.5 ÊµÏÖ
+ *  é¿éšœæ¨¡å—  v3.5 å®ç°
  *  ==========================================================================
- *  ·Ö²ã£º
- *      1) ³¬Éù²¨Çı¶¯£¨HC-SR04£©   TIM2 ¼ÆÊı + EXTI1 Ë«ÑØ£¬·Ç×èÈû£¬30ms ³¬Ê±
- *      2) ¶æ»úÇı¶¯                 TIM3_CH3 / PB0£¬50Hz
- *      3) ±ÜÕÏ×´Ì¬»ú              Á½°æ¶şÑ¡Ò»£¨AVOID_SCAN_WHILE_DRIVING£©
+ *  åˆ†å±‚ï¼š
+ *      1) è¶…å£°æ³¢é©±åŠ¨ï¼ˆHC-SR04ï¼‰   TIM2 è®¡æ•° + EXTI1 åŒæ²¿ï¼Œéé˜»å¡ï¼Œ30ms è¶…æ—¶
+ *      2) èˆµæœºé©±åŠ¨                 TIM3_CH3 / PB0ï¼Œ50Hz
+ *      3) é¿éšœçŠ¶æ€æœº              ä¸¤ç‰ˆäºŒé€‰ä¸€ï¼ˆAVOID_SCAN_WHILE_DRIVINGï¼‰
  *
- *  ³¬Éù²¨²â¾àÔ­Àí£º
- *      TRIG ¸ø 15us ¸ßµçÆ½ ¡ú Ä£¿é·¢ 8 ¸ö 40kHz Âö³å
- *      ¡ú ECHO À­¸ß£¨ÉÏÉıÑØ£©¿ªÊ¼¼ÆÊ± ¡ú ECHO À­µÍ£¨ÏÂ½µÑØ£©½áÊø
- *      ¡ú ¸ßµçÆ½Ê±¼ä t(us) Óë¾àÀëµÄ¹ØÏµ£ºdistance_cm = t / 58
- *      £¨µÈ¼ÛÓÚ t ¡Á 0.017£¬ÉùËÙ 340m/s£¬Íù·µ³ıÒÔ 2£©
+ *  è¶…å£°æ³¢æµ‹è·åŸç†ï¼š
+ *      TRIG ç»™ 15us é«˜ç”µå¹³ â†’ æ¨¡å—å‘ 8 ä¸ª 40kHz è„‰å†²
+ *      â†’ ECHO æ‹‰é«˜ï¼ˆä¸Šå‡æ²¿ï¼‰å¼€å§‹è®¡æ—¶ â†’ ECHO æ‹‰ä½ï¼ˆä¸‹é™æ²¿ï¼‰ç»“æŸ
+ *      â†’ é«˜ç”µå¹³æ—¶é—´ t(us) ä¸è·ç¦»çš„å…³ç³»ï¼šdistance_cm = t / 58
+ *      ï¼ˆç­‰ä»·äº t Ã— 0.017ï¼Œå£°é€Ÿ 340m/sï¼Œå¾€è¿”é™¤ä»¥ 2ï¼‰
  *
- *  ÎªÊ²Ã´ÓÃ EXTI Ë«ÑØ¶ø²»ÊÇ"ÖĞ¶ÏÀïËÀµÈ"£º
- *      ³§ÉÌÀı³ÌÔÚ EXTI ÖĞ¶ÏÀï while(ECHO ¸ß) ËÀµÈ£¬Ã»ÓĞ»Ø²¨Ê±£¨Ç°·½ÎŞÕÚµ²¡¢
- *      ³¬³öÁ¿³Ì¡¢Ä£¿éÃ»½Ó£©»áÓÀÔ¶¿¨ÔÚÖĞ¶ÏÀï£¬Õû»úËÀ»ú¡£
- *      ÕâÀï¸Ä³É£ºÉÏÉıÑØ¼ÇÂ¼Æğµã¡¢ÏÂ½µÑØ¼ÆËã¿í¶È£¬Ö÷Ñ­»·×î¶àµÈ 30ms£¬
- *      ³¬Ê±¾ÍÅĞ"ÎŞĞ§"£¬ÓÀÔ¶²»»á¿¨ËÀ¡£
+ *  ä¸ºä»€ä¹ˆç”¨ EXTI åŒæ²¿è€Œä¸æ˜¯"ä¸­æ–­é‡Œæ­»ç­‰"ï¼š
+ *      å‚å•†ä¾‹ç¨‹åœ¨ EXTI ä¸­æ–­é‡Œ while(ECHO é«˜) æ­»ç­‰ï¼Œæ²¡æœ‰å›æ³¢æ—¶ï¼ˆå‰æ–¹æ— é®æŒ¡ã€
+ *      è¶…å‡ºé‡ç¨‹ã€æ¨¡å—æ²¡æ¥ï¼‰ä¼šæ°¸è¿œå¡åœ¨ä¸­æ–­é‡Œï¼Œæ•´æœºæ­»æœºã€‚
+ *      è¿™é‡Œæ”¹æˆï¼šä¸Šå‡æ²¿è®°å½•èµ·ç‚¹ã€ä¸‹é™æ²¿è®¡ç®—å®½åº¦ï¼Œä¸»å¾ªç¯æœ€å¤šç­‰ 30msï¼Œ
+ *      è¶…æ—¶å°±åˆ¤"æ— æ•ˆ"ï¼Œæ°¸è¿œä¸ä¼šå¡æ­»ã€‚
  * ========================================================================== */
 
-/* ---------------------------- Òı½Å ---------------------------- */
+/* ---------------------------- å¼•è„š ---------------------------- */
 #define ULTRA_TRIG_PORT        GPIOC
 #define ULTRA_TRIG_PIN         GPIO_Pin_0      /* PC0  TRIG */
 #define ULTRA_ECHO_PORT        GPIOC
@@ -33,16 +33,16 @@
 #define SERVO_PORT             GPIOB
 #define SERVO_PIN              GPIO_Pin_0      /* PB0  TIM3_CH3 */
 
-/* ---------------------- ³¬Éù²¨²âÁ¿×´Ì¬ ---------------------- */
-static volatile u8  ultra_stage = 0;    /* 0=¿ÕÏĞ  1=µÈÉÏÉıÑØ  2=µÈÏÂ½µÑØ */
-static volatile u16 ultra_start = 0;    /* ÉÏÉıÑØÊ±¿Ì£¨TIM2 ¼ÆÊı£¬1us£© */
-static volatile u16 ultra_width = 0;    /* »Ø²¨¸ßµçÆ½¿í¶È£¨us£© */
-static volatile u8  ultra_done  = 0;    /* 1=±¾´Î²âÁ¿Íê³É */
+/* ---------------------- è¶…å£°æ³¢æµ‹é‡çŠ¶æ€ ---------------------- */
+static volatile u8  ultra_stage = 0;    /* 0=ç©ºé—²  1=ç­‰ä¸Šå‡æ²¿  2=ç­‰ä¸‹é™æ²¿ */
+static volatile u16 ultra_start = 0;    /* ä¸Šå‡æ²¿æ—¶åˆ»ï¼ˆTIM2 è®¡æ•°ï¼Œ1usï¼‰ */
+static volatile u16 ultra_width = 0;    /* å›æ³¢é«˜ç”µå¹³å®½åº¦ï¼ˆusï¼‰ */
+static volatile u8  ultra_done  = 0;    /* 1=æœ¬æ¬¡æµ‹é‡å®Œæˆ */
 
-/* ---------------------- ¶æ»ú ---------------------- */
+/* ---------------------- èˆµæœº ---------------------- */
 static u8 av_angle = AV_SERVO_CENTER;
 
-/* ---------------------- ×´Ì¬»ú ---------------------- */
+/* ---------------------- çŠ¶æ€æœº ---------------------- */
 #define AV_IDLE      0
 #define AV_SCAN      1
 #define AV_TURN      2
@@ -50,22 +50,22 @@ static u8 av_angle = AV_SERVO_CENTER;
 
 static u8  av_state      = AV_IDLE;
 static u8  av_step       = 0;
-static u16 av_timer      = 0;      /* µ±Ç°½×¶Îµ¹¼ÆÊ±(ms) */
-static u16 av_tick_cnt   = 0;      /* ²âÁ¿ÖÜÆÚ¼ÆÊı */
-static u8  av_dist       = 0;      /* Ç°·½¾àÀë */
-static u8  av_dist_l     = 0;      /* ×ó²à¾àÀë */
-static u8  av_dist_r     = 0;      /* ÓÒ²à¾àÀë */
-static u8  av_turn_left  = 1;      /* ±¾´ÎÍù×ó×ª? */
-static u8  av_sweep_dir  = 1;      /* ±ß×ß±ßÉ¨£º¶æ»úÉ¨Ãè·½Ïò +1/-1 */
-static u8  av_best_angle = AV_SERVO_CENTER;  /* ±ß×ß±ßÉ¨£º×î¿ÕµÄ½Ç¶È */
+static u16 av_timer      = 0;      /* å½“å‰é˜¶æ®µå€’è®¡æ—¶(ms) */
+static u16 av_tick_cnt   = 0;      /* æµ‹é‡å‘¨æœŸè®¡æ•° */
+static u8  av_dist       = 0;      /* å‰æ–¹è·ç¦» */
+static u8  av_dist_l     = 0;      /* å·¦ä¾§è·ç¦» */
+static u8  av_dist_r     = 0;      /* å³ä¾§è·ç¦» */
+static u8  av_turn_left  = 1;      /* æœ¬æ¬¡å¾€å·¦è½¬? */
+static u8  av_sweep_dir  = 1;      /* è¾¹èµ°è¾¹æ‰«ï¼šèˆµæœºæ‰«ææ–¹å‘ +1/-1 */
+static u8  av_best_angle = AV_SERVO_CENTER;  /* è¾¹èµ°è¾¹æ‰«ï¼šæœ€ç©ºçš„è§’åº¦ */
 static u8  av_best_dist  = 0;
-static u8  av_phase      = 0;      /* ±ß×ß±ßÉ¨£º0=×ª¶æ»ú 1=²â¾à */
+static u8  av_phase      = 0;      /* è¾¹èµ°è¾¹æ‰«ï¼š0=è½¬èˆµæœº 1=æµ‹è· */
 
 /* ==========================================================================
- *  ³¬Éù²¨Çı¶¯
+ *  è¶…å£°æ³¢é©±åŠ¨
  * ========================================================================== */
 
-/* ³õÊ¼»¯£ºPC0 ÍÆÍìÊä³ö¡¢PC1 ÏÂÀ­ÊäÈë + EXTI1 Ë«ÑØ¡¢TIM2 1MHz ¼ÆÊı */
+/* åˆå§‹åŒ–ï¼šPC0 æ¨æŒ½è¾“å‡ºã€PC1 ä¸‹æ‹‰è¾“å…¥ + EXTI1 åŒæ²¿ã€TIM2 1MHz è®¡æ•° */
 static void Ultra_Init(void)
 {
     GPIO_InitTypeDef        gpio;
@@ -76,19 +76,19 @@ static void Ultra_Init(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
-    /* TRIG£ºPC0 ÍÆÍìÊä³ö£¬³õÊ¼µÍ */
+    /* TRIGï¼šPC0 æ¨æŒ½è¾“å‡ºï¼Œåˆå§‹ä½ */
     gpio.GPIO_Pin   = ULTRA_TRIG_PIN;
     gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
     gpio.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(ULTRA_TRIG_PORT, &gpio);
     GPIO_ResetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
 
-    /* ECHO£ºPC1 ÏÂÀ­ÊäÈë */
+    /* ECHOï¼šPC1 ä¸‹æ‹‰è¾“å…¥ */
     gpio.GPIO_Pin  = ULTRA_ECHO_PIN;
     gpio.GPIO_Mode = GPIO_Mode_IPD;
     GPIO_Init(ULTRA_ECHO_PORT, &gpio);
 
-    /* EXTI1£ºPC1 ÉÏÉıÑØ + ÏÂ½µÑØ¶¼´¥·¢ */
+    /* EXTI1ï¼šPC1 ä¸Šå‡æ²¿ + ä¸‹é™æ²¿éƒ½è§¦å‘ */
     GPIO_EXTILineConfig(GPIO_PortSourceGPIOC, GPIO_PinSource1);
     exti.EXTI_Line    = EXTI_Line1;
     exti.EXTI_Mode    = EXTI_Mode_Interrupt;
@@ -102,7 +102,7 @@ static void Ultra_Init(void)
     nvic.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&nvic);
 
-    /* TIM2£º72MHz / (71+1) = 1MHz£¬1 ¸ö¼ÆÊı = 1us£¬16 Î»×ÔÓÉ¼ÆÊı */
+    /* TIM2ï¼š72MHz / (71+1) = 1MHzï¼Œ1 ä¸ªè®¡æ•° = 1usï¼Œ16 ä½è‡ªç”±è®¡æ•° */
     tb.TIM_Period        = 0xFFFF;
     tb.TIM_Prescaler     = 71;
     tb.TIM_ClockDivision = 0;
@@ -111,16 +111,16 @@ static void Ultra_Init(void)
     TIM_Cmd(TIM2, ENABLE);
 }
 
-/* EXTI1£ºECHO Ë«ÑØÖĞ¶Ï
- * ÉÏÉıÑØ£º¼ÇÏÂÆğµã
- * ÏÂ½µÑØ£ºËã³ö¿í¶È£¬±ê¼ÇÍê³É
- * ×¢Òâ£ºÕâÀïÖ»×ö×îÉÙµÄÊÂ£¬¾ø²»ËÀµÈ£¨ÕâÊÇ³§ÉÌÀı³Ì×î´óµÄ¿Ó£©
+/* EXTI1ï¼šECHO åŒæ²¿ä¸­æ–­
+ * ä¸Šå‡æ²¿ï¼šè®°ä¸‹èµ·ç‚¹
+ * ä¸‹é™æ²¿ï¼šç®—å‡ºå®½åº¦ï¼Œæ ‡è®°å®Œæˆ
+ * æ³¨æ„ï¼šè¿™é‡Œåªåšæœ€å°‘çš„äº‹ï¼Œç»ä¸æ­»ç­‰ï¼ˆè¿™æ˜¯å‚å•†ä¾‹ç¨‹æœ€å¤§çš„å‘ï¼‰
  */
 void EXTI1_IRQHandler(void)
 {
     if (EXTI_GetITStatus(EXTI_Line1) != RESET)
     {
-        if (GPIO_ReadInputDataBit(ULTRA_ECHO_PORT, ULTRA_ECHO_PIN))   /* ÉÏÉıÑØ */
+        if (GPIO_ReadInputDataBit(ULTRA_ECHO_PORT, ULTRA_ECHO_PIN))   /* ä¸Šå‡æ²¿ */
         {
             if (ultra_stage == 1)
             {
@@ -128,11 +128,11 @@ void EXTI1_IRQHandler(void)
                 ultra_stage = 2;
             }
         }
-        else                                                          /* ÏÂ½µÑØ */
+        else                                                          /* ä¸‹é™æ²¿ */
         {
             if (ultra_stage == 2)
             {
-                ultra_width = (u16)((u16)TIM2->CNT - ultra_start);    /* 16 Î»×Ô¶¯»ØÈÆ */
+                ultra_width = (u16)((u16)TIM2->CNT - ultra_start);    /* 16 ä½è‡ªåŠ¨å›ç»• */
                 ultra_done  = 1;
                 ultra_stage = 0;
             }
@@ -141,25 +141,25 @@ void EXTI1_IRQHandler(void)
     }
 }
 
-/* ·¢ÆğÒ»´Î²â¾à²¢µÈ´ı½á¹û
- * ·µ»Ø£º¾àÀë(cm)£¬0 = ³¬Ê±/ÎŞ»Ø²¨/³¬Á¿³Ì£¨¶¼ÊÓÎª"Ã»ÓĞÕÏ°­"»ò"ÎŞĞ§"£©
- * ×èÈûÊ±¼ä£ºÕı³£ 1~20ms£¬×î»µ 30ms£¨ÓĞ³¬Ê±±£»¤£©
+/* å‘èµ·ä¸€æ¬¡æµ‹è·å¹¶ç­‰å¾…ç»“æœ
+ * è¿”å›ï¼šè·ç¦»(cm)ï¼Œ0 = è¶…æ—¶/æ— å›æ³¢/è¶…é‡ç¨‹ï¼ˆéƒ½è§†ä¸º"æ²¡æœ‰éšœç¢"æˆ–"æ— æ•ˆ"ï¼‰
+ * é˜»å¡æ—¶é—´ï¼šæ­£å¸¸ 1~20msï¼Œæœ€å 30msï¼ˆæœ‰è¶…æ—¶ä¿æŠ¤ï¼‰
  */
 static u8 Ultra_Measure(void)
 {
     u16 wait;
 
-    /* ÉÏÒ»´ÎÃ»½áÊøµÄ²ĞÁôÏÈÇåµô */
+    /* ä¸Šä¸€æ¬¡æ²¡ç»“æŸçš„æ®‹ç•™å…ˆæ¸…æ‰ */
     ultra_done  = 0;
     ultra_width = 0;
     ultra_stage = 1;
 
-    /* 15us ´¥·¢Âö³å */
+    /* 15us è§¦å‘è„‰å†² */
     GPIO_SetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
     delay_us(15);
     GPIO_ResetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
 
-    /* ×î¶àµÈ 30ms£¨300 ¡Á 100us£© */
+    /* æœ€å¤šç­‰ 30msï¼ˆ300 Ã— 100usï¼‰ */
     for (wait = 0; wait < (AV_MEAS_TIMEOUT_US / 100); wait++)
     {
         if (ultra_done) break;
@@ -172,16 +172,16 @@ static u8 Ultra_Measure(void)
         return 0;
     }
 
-    /* ¿í¶È(us) ¡ú ÀåÃ×£ºt / 58 */
+    /* å®½åº¦(us) â†’ å˜ç±³ï¼št / 58 */
     {
         u32 cm = (u32)ultra_width / 58;
-        if (cm == 0 || cm > 200) return 0;      /* 0 »ò³¬Á¿³Ì£¨>2m£©¶¼ËãÎŞĞ§ */
+        if (cm == 0 || cm > 200) return 0;      /* 0 æˆ–è¶…é‡ç¨‹ï¼ˆ>2mï¼‰éƒ½ç®—æ— æ•ˆ */
         return (u8)cm;
     }
 }
 
 /* ==========================================================================
- *  ¶æ»úÇı¶¯£¨TIM3_CH3 / PB0£¬50Hz£©
+ *  èˆµæœºé©±åŠ¨ï¼ˆTIM3_CH3 / PB0ï¼Œ50Hzï¼‰
  * ========================================================================== */
 
 static void Servo_Init(void)
@@ -193,13 +193,13 @@ static void Servo_Init(void)
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
 
-    /* PB0 = TIM3_CH3£¬¸´ÓÃÍÆÍì */
+    /* PB0 = TIM3_CH3ï¼Œå¤ç”¨æ¨æŒ½ */
     gpio.GPIO_Pin   = SERVO_PIN;
     gpio.GPIO_Mode  = GPIO_Mode_AF_PP;
     gpio.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(SERVO_PORT, &gpio);
 
-    /* 1MHz ¼ÆÊı£¬20ms ÖÜÆÚ£¨ARR=19999£© */
+    /* 1MHz è®¡æ•°ï¼Œ20ms å‘¨æœŸï¼ˆARR=19999ï¼‰ */
     tb.TIM_Period        = 19999;
     tb.TIM_Prescaler     = 71;
     tb.TIM_ClockDivision = 0;
@@ -208,7 +208,7 @@ static void Servo_Init(void)
 
     oc.TIM_OCMode      = TIM_OCMode_PWM1;
     oc.TIM_OutputState = TIM_OutputState_Enable;
-    oc.TIM_Pulse       = 1500;              /* ÖĞÎ» 1.5ms */
+    oc.TIM_Pulse       = 1500;              /* ä¸­ä½ 1.5ms */
     oc.TIM_OCPolarity  = TIM_OCPolarity_High;
     TIM_OC3Init(TIM3, &oc);
 
@@ -217,7 +217,7 @@ static void Servo_Init(void)
     TIM_Cmd(TIM3, ENABLE);
 }
 
-/* ½Ç¶È 0~180 ¡ú Âö¿í 500~2500us */
+/* è§’åº¦ 0~180 â†’ è„‰å®½ 500~2500us */
 static void Servo_SetAngle(u8 deg)
 {
     u16 ccr;
@@ -228,13 +228,13 @@ static void Servo_SetAngle(u8 deg)
 }
 
 /* ==========================================================================
- *  ¶ÔÍâ½Ó¿Ú
+ *  å¯¹å¤–æ¥å£
  * ========================================================================== */
 u8 AVoid_GetState(void)    { return av_state; }
 u8 AVoid_GetDistance(void) { return av_dist; }
 u8 AVoid_GetAngle(void)    { return av_angle; }
 
-/* ¹©ÈÚºÏÄ£Ê½¸´ÓÃ£º²â¾à / Éè¶æ»ú½Ç */
+/* ä¾›èåˆæ¨¡å¼å¤ç”¨ï¼šæµ‹è· / è®¾èˆµæœºè§’ */
 u8 AVoid_Measure(void)      { return Ultra_Measure(); }
 void AVoid_Servo(u8 deg)    { Servo_SetAngle(deg); }
 
@@ -254,16 +254,16 @@ void IRAvoidInit(void)
     av_best_dist  = 0;
 
     Servo_SetAngle(AV_SERVO_CENTER);
-    delay_ms(300);              /* µÈ¶æ»ú¹éÖĞ */
+    delay_ms(300);              /* ç­‰èˆµæœºå½’ä¸­ */
 }
 
 /* ==========================================================================
- *  °æ±¾Ò»£ºÍ£³µÉ¨Ãè£¨AVOID_SCAN_WHILE_DRIVING = 0£©
+ *  ç‰ˆæœ¬ä¸€ï¼šåœè½¦æ‰«æï¼ˆAVOID_SCAN_WHILE_DRIVING = 0ï¼‰
  * ==========================================================================
- *  IDLE Ö±ĞĞ ©¤©¤Ç°·½<AV_TRIGGER_CM©¤©¤¡ú Í£³µ
- *      ¡ú SCAN£ºÖĞÎ»²âÇ°·½ ¡ú ×ó¼«ÏŞ²â×ó ¡ú ÓÒ¼«ÏŞ²âÓÒ
- *      ¡ú Ñ¡¾àÀë´óµÄÒ»²à£¨Á½²à¶¼ <AV_MIN_GAP_CM ¾ÍÔ­µØµôÍ·£©
- *      ¡ú TURN ×ªÏò ¡ú RECOVER »ØÕı ¡ú IDLE
+ *  IDLE ç›´è¡Œ â”€â”€å‰æ–¹<AV_TRIGGER_CMâ”€â”€â†’ åœè½¦
+ *      â†’ SCANï¼šä¸­ä½æµ‹å‰æ–¹ â†’ å·¦æé™æµ‹å·¦ â†’ å³æé™æµ‹å³
+ *      â†’ é€‰è·ç¦»å¤§çš„ä¸€ä¾§ï¼ˆä¸¤ä¾§éƒ½ <AV_MIN_GAP_CM å°±åŸåœ°æ‰å¤´ï¼‰
+ *      â†’ TURN è½¬å‘ â†’ RECOVER å›æ­£ â†’ IDLE
  */
 #if !AVOID_SCAN_WHILE_DRIVING
 
@@ -271,7 +271,7 @@ static void AVoid_RunStopScan(void)
 {
     switch (av_state)
     {
-        /* ---------------- Ö±ĞĞ£¬¶¨Ê±Á¿Ç°·½ ---------------- */
+        /* ---------------- ç›´è¡Œï¼Œå®šæ—¶é‡å‰æ–¹ ---------------- */
         case AV_IDLE:
             Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
 
@@ -280,9 +280,9 @@ static void AVoid_RunStopScan(void)
                 av_tick_cnt = 0;
                 av_dist = Ultra_Measure();
 
-                if (av_dist && av_dist < AV_TRIGGER_CM)      /* ÓĞÕÏ°­ */
+                if (av_dist && av_dist < AV_TRIGGER_CM)      /* æœ‰éšœç¢ */
                 {
-                    Motor_Stop();                            /* ÏÈÍ£ÎÈÔÙÉ¨£¬²â¾à×î×¼ */
+                    Motor_Stop();                            /* å…ˆåœç¨³å†æ‰«ï¼Œæµ‹è·æœ€å‡† */
                     Servo_SetAngle(AV_SERVO_CENTER);
                     av_state = AV_SCAN;
                     av_step  = 0;
@@ -291,36 +291,36 @@ static void AVoid_RunStopScan(void)
             }
             break;
 
-        /* ---------------- É¨ÃèÈı¸ö·½Ïò ---------------- */
+        /* ---------------- æ‰«æä¸‰ä¸ªæ–¹å‘ ---------------- */
         case AV_SCAN:
             if (av_timer > 0) { av_timer -= 10; break; }
 
-            if (av_step == 0)                                /* ÖĞÎ»£ºÒÑ¾ÍĞ÷£¬²âÇ°·½ */
+            if (av_step == 0)                                /* ä¸­ä½ï¼šå·²å°±ç»ªï¼Œæµ‹å‰æ–¹ */
             {
                 av_dist = Ultra_Measure();
                 Servo_SetAngle(AV_SERVO_LEFT);
                 av_step  = 1;
                 av_timer = AV_SETTLE_MS;
             }
-            else if (av_step == 1)                           /* ×ó²à */
+            else if (av_step == 1)                           /* å·¦ä¾§ */
             {
                 av_dist_l = Ultra_Measure();
                 Servo_SetAngle(AV_SERVO_RIGHT);
                 av_step  = 2;
                 av_timer = AV_SETTLE_MS;
             }
-            else                                             /* ÓÒ²à£¬È»ºó¾ö²ß */
+            else                                             /* å³ä¾§ï¼Œç„¶åå†³ç­– */
             {
                 av_dist_r = Ultra_Measure();
                 Servo_SetAngle(AV_SERVO_CENTER);
 
                 if (av_dist_l < AV_MIN_GAP_CM && av_dist_r < AV_MIN_GAP_CM)
                 {
-                    av_turn_left = 0xFF;                     /* ÌØÊâÖµ£ºÔ­µØµôÍ· */
+                    av_turn_left = 0xFF;                     /* ç‰¹æ®Šå€¼ï¼šåŸåœ°æ‰å¤´ */
                 }
                 else
                 {
-                    /* ÎŞĞ§(0)°´"ºÜÔ¶"´¦Àí */
+                    /* æ— æ•ˆ(0)æŒ‰"å¾ˆè¿œ"å¤„ç† */
                     av_turn_left = ((av_dist_l ? av_dist_l : 200) >=
                                     (av_dist_r ? av_dist_r : 200)) ? 1 : 0;
                 }
@@ -332,20 +332,20 @@ static void AVoid_RunStopScan(void)
             }
             break;
 
-        /* ---------------- ×ªÏò ---------------- */
+        /* ---------------- è½¬å‘ ---------------- */
         case AV_TURN:
             if (av_turn_left == 0xFF)
-                Motor_SetSpeed(-AV_SPIN_SPEED, AV_SPIN_SPEED);   /* Ô­µØ×óµôÍ· */
+                Motor_SetSpeed(-AV_SPIN_SPEED, AV_SPIN_SPEED);   /* åŸåœ°å·¦æ‰å¤´ */
             else if (av_turn_left)
-                Motor_SetSpeed(AV_TURN_INNER, AV_TURN_OUTER);    /* ×ó×ª */
+                Motor_SetSpeed(AV_TURN_INNER, AV_TURN_OUTER);    /* å·¦è½¬ */
             else
-                Motor_SetSpeed(AV_TURN_OUTER, AV_TURN_INNER);    /* ÓÒ×ª */
+                Motor_SetSpeed(AV_TURN_OUTER, AV_TURN_INNER);    /* å³è½¬ */
 
             if (av_timer > 0) av_timer -= 10;
             else { av_state = AV_RECOVER; av_timer = AV_RECOVER_MS; }
             break;
 
-        /* ---------------- »ØÕı ---------------- */
+        /* ---------------- å›æ­£ ---------------- */
         case AV_RECOVER:
             Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
             if (av_timer > 0) av_timer -= 10;
@@ -367,14 +367,14 @@ static void AVoid_RunStopScan(void)
 #endif  /* !AVOID_SCAN_WHILE_DRIVING */
 
 /* ==========================================================================
- *  °æ±¾¶ş£º±ß×ß±ßÉ¨£¨AVOID_SCAN_WHILE_DRIVING = 1£©
+ *  ç‰ˆæœ¬äºŒï¼šè¾¹èµ°è¾¹æ‰«ï¼ˆAVOID_SCAN_WHILE_DRIVING = 1ï¼‰
  * ==========================================================================
- *  ³µÒ»Ö±ÔÚ×ß£¬¶æ»úÔÚ [ÖĞÎ» ¡À AV_SWEEP_HALF] Ö®¼äÍù·µÉ¨£º
- *      phase0£º°Ñ¶æ»ú×ªµ½µ±Ç°É¨Ãè½Ç
- *      phase1£ºµÈ AV_SETTLE_MS ºó²â¾à£¬¼ÇÂ¼"×î¿Õ½Ç¶È"
- *  Ç°·½ ¡À20¡ã ÄÚ¾àÀë < AV_TRIGGER_CM Ê±£º
- *      ³¯×î½üÒ»´ÎÉ¨µ½µÄ"×î¿ÕÄÇÒ»²à"Ö±½Ó»¡Ïß×ª¹ıÈ¥£¨²»Í£³µ£©
- *  É¨Ãè·¶Î§±ÈÍ£³µ°æÕ­£¨¡À40¡ã£©£ºÒòÎªĞĞÊ»ÖĞ¶æ»ú×ªÌ«¿ì»áÓ°Ïì²â¾àÎÈ¶¨ĞÔ¡£
+ *  è½¦ä¸€ç›´åœ¨èµ°ï¼Œèˆµæœºåœ¨ [ä¸­ä½ Â± AV_SWEEP_HALF] ä¹‹é—´å¾€è¿”æ‰«ï¼š
+ *      phase0ï¼šæŠŠèˆµæœºè½¬åˆ°å½“å‰æ‰«æè§’
+ *      phase1ï¼šç­‰ AV_SETTLE_MS åæµ‹è·ï¼Œè®°å½•"æœ€ç©ºè§’åº¦"
+ *  å‰æ–¹ Â±20Â° å†…è·ç¦» < AV_TRIGGER_CM æ—¶ï¼š
+ *      æœæœ€è¿‘ä¸€æ¬¡æ‰«åˆ°çš„"æœ€ç©ºé‚£ä¸€ä¾§"ç›´æ¥å¼§çº¿è½¬è¿‡å»ï¼ˆä¸åœè½¦ï¼‰
+ *  æ‰«æèŒƒå›´æ¯”åœè½¦ç‰ˆçª„ï¼ˆÂ±40Â°ï¼‰ï¼šå› ä¸ºè¡Œé©¶ä¸­èˆµæœºè½¬å¤ªå¿«ä¼šå½±å“æµ‹è·ç¨³å®šæ€§ã€‚
  */
 #if AVOID_SCAN_WHILE_DRIVING
 
@@ -385,7 +385,7 @@ static void AVoid_RunDriveScan(void)
 
     switch (av_state)
     {
-        /* ---------------- Ö±ĞĞ + É¨Ãè ---------------- */
+        /* ---------------- ç›´è¡Œ + æ‰«æ ---------------- */
         case AV_IDLE:
             Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
 
@@ -395,25 +395,25 @@ static void AVoid_RunDriveScan(void)
                 break;
             }
 
-            if (av_phase == 0)                               /* ×ª¶æ»ú */
+            if (av_phase == 0)                               /* è½¬èˆµæœº */
             {
                 Servo_SetAngle(av_angle);
                 av_phase = 1;
                 av_timer = AV_SETTLE_MS;
             }
-            else                                             /* ²â¾à + ×ßÏÂÒ»²½ */
+            else                                             /* æµ‹è· + èµ°ä¸‹ä¸€æ­¥ */
             {
                 d = Ultra_Measure();
 
                 if (d)
                 {
-                    if (d > av_best_dist)                    /* ¼ÇÂ¼×î¿Õ·½Ïò */
+                    if (d > av_best_dist)                    /* è®°å½•æœ€ç©ºæ–¹å‘ */
                     {
                         av_best_dist  = d;
                         av_best_angle = av_angle;
                     }
 
-                    /* Ç°·½ ¡À20¡ã ÄÚÌ«½ü ¡ú ¾ö¶¨ÍùÄÄ±ß¶ã */
+                    /* å‰æ–¹ Â±20Â° å†…å¤ªè¿‘ â†’ å†³å®šå¾€å“ªè¾¹èº² */
                     if (av_angle >= (AV_SERVO_CENTER - 20) &&
                         av_angle <= (AV_SERVO_CENTER + 20) &&
                         d < AV_TRIGGER_CM)
@@ -429,7 +429,7 @@ static void AVoid_RunDriveScan(void)
 
                 av_phase = 0;
 
-                /* É¨Ãè½ÇÍù·µ£ºÖĞÎ» ¡À AV_SWEEP_HALF£¬²½½ø 10¡ã */
+                /* æ‰«æè§’å¾€è¿”ï¼šä¸­ä½ Â± AV_SWEEP_HALFï¼Œæ­¥è¿› 10Â° */
                 if (av_sweep_dir > 0)
                 {
                     if (av_angle + 10 >= AV_SERVO_CENTER + AV_SWEEP_HALF)
@@ -447,11 +447,11 @@ static void AVoid_RunDriveScan(void)
                     else av_angle -= 10;
                 }
 
-                av_timer = 20;      /* Á½´Î²âÁ¿Ö®¼äÁôÒ»µã¿Õµµ£¬±ğ°ÑÖ÷Ñ­»·Õ¼Âú */
+                av_timer = 20;      /* ä¸¤æ¬¡æµ‹é‡ä¹‹é—´ç•™ä¸€ç‚¹ç©ºæ¡£ï¼Œåˆ«æŠŠä¸»å¾ªç¯å æ»¡ */
             }
             break;
 
-        /* ---------------- ±ß×ß±ß×ª ---------------- */
+        /* ---------------- è¾¹èµ°è¾¹è½¬ ---------------- */
         case AV_TURN:
             if (av_turn_left)
                 Motor_SetSpeed(AV_TURN_INNER, AV_TURN_OUTER);
@@ -470,7 +470,7 @@ static void AVoid_RunDriveScan(void)
             }
             break;
 
-        /* ---------------- »ØÕıºó¼ÌĞøÉ¨ ---------------- */
+        /* ---------------- å›æ­£åç»§ç»­æ‰« ---------------- */
         case AV_RECOVER:
             Motor_SetSpeed(AV_BASE_SPEED, AV_BASE_SPEED);
             if (av_timer > 10) av_timer -= 10;
@@ -495,7 +495,7 @@ static void AVoid_RunDriveScan(void)
 #endif  /* AVOID_SCAN_WHILE_DRIVING */
 
 /* ==========================================================================
- *  Í³Ò»Èë¿Ú
+ *  ç»Ÿä¸€å…¥å£
  * ========================================================================== */
 void AVoidRun(void)
 {

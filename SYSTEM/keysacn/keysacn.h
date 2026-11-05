@@ -1,31 +1,31 @@
-#ifndef __KEYSACN_H_
+ï»¿#ifndef __KEYSACN_H_
 #define __KEYSACN_H_
 
 #include "stm32f10x.h"
 
-void KEY_Init(void);//°´¼ü³õÊ¼»¯
-void keysacn(void);//°´¼üÉ¨Ãèº¯Êı
+void KEY_Init(void);//æŒ‰é”®åˆå§‹åŒ–
+void keysacn(void);//æŒ‰é”®æ‰«æå‡½æ•°
 
-//·äÃùÆ÷IO¿Ú¶¨Òå
+//èœ‚é¸£å™¨IOå£å®šä¹‰
 #define BEEP_PIN         GPIO_Pin_3
 #define BEEP_GPIO        GPIOC
 #define BEEP_SET         GPIO_SetBits(BEEP_GPIO,BEEP_PIN)
 #define BEEP_RESET       GPIO_ResetBits(BEEP_GPIO,BEEP_PIN)
 
-// LED D3µÆIO¿Ú¶¨Òå
+// LED D3ç¯IOå£å®šä¹‰
 #define LED_D3_PIN       GPIO_Pin_6
 #define LED_D3_PIN_GPIO  GPIOB
 #define LED_D3_SET       GPIO_SetBits(LED_D3_PIN_GPIO,LED_D3_PIN)
 #define LED_D3_RESET     GPIO_ResetBits(LED_D3_PIN_GPIO,LED_D3_PIN)
 
-// LED D4µÆIO¿Ú¶¨Òå
+// LED D4ç¯IOå£å®šä¹‰
 #define LED_D4_PIN       GPIO_Pin_6
 #define LED_D4_PIN_GPIO  GPIOA
 #define LED_D4_SET       GPIO_SetBits(LED_D4_PIN_GPIO,LED_D4_PIN)
 #define LED_D4_RESET     GPIO_ResetBits(LED_D4_PIN_GPIO,LED_D4_PIN)
 
 
-//¶ÁÈ¡°´¼ü
-#define KEY  GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2)//¶ÁÈ¡°´¼ü0
+//è¯»å–æŒ‰é”®
+#define KEY  GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2)//è¯»å–æŒ‰é”®0
 
 #endif

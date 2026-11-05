@@ -1,52 +1,52 @@
-#include "keysacn.h"
+ï»¿#include "keysacn.h"
 #include "delay.h"
 #include "stm32f10x.h"                  // Device header
-//°´¼ü³õÊ¼»¯º¯Êı 
-//PA15ºÍPC5 ÉèÖÃ³ÉÊäÈë
+//æŒ‰é”®åˆå§‹åŒ–å‡½æ•° 
+//PA15å’ŒPC5 è®¾ç½®æˆè¾“å…¥
 void KEY_Init(void)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA|RCC_APB2Periph_GPIOB|RCC_APB2Periph_GPIOC,ENABLE);//Ê¹ÄÜPORTA,PORTCÊ±ÖÓ     
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA|RCC_APB2Periph_GPIOB|RCC_APB2Periph_GPIOC,ENABLE);//ä½¿èƒ½PORTA,PORTCæ—¶é’Ÿ     
 	
 	GPIO_InitStructure.GPIO_Pin  = GPIO_Pin_2;//PC2
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU; //ÉèÖÃ³ÉÉÏÀ­ÊäÈë
- 	GPIO_Init(GPIOC, &GPIO_InitStructure);//³õÊ¼»¯GPIOC2
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU; //è®¾ç½®æˆä¸Šæ‹‰è¾“å…¥
+ 	GPIO_Init(GPIOC, &GPIO_InitStructure);//åˆå§‹åŒ–GPIOC2
 	
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;				 //·äÃùÆ÷PC3
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; //ÍÆÍìÊä³ö
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//IO¿ÚËÙ¶ÈÎª50MHz
-  GPIO_Init(GPIOC, &GPIO_InitStructure);					 //¸ù¾İÉè¶¨²ÎÊı³õÊ¼»¯GPIOC.3
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;				 //èœ‚é¸£å™¨PC3
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; //æ¨æŒ½è¾“å‡º
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//IOå£é€Ÿåº¦ä¸º50MHz
+  GPIO_Init(GPIOC, &GPIO_InitStructure);					 //æ ¹æ®è®¾å®šå‚æ•°åˆå§‹åŒ–GPIOC.3
 	
 	GPIO_InitStructure.GPIO_Pin = LED_D3_PIN;				 //LED D3
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; //ÍÆÍìÊä³ö
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//IO¿ÚËÙ¶ÈÎª50MHz
-  GPIO_Init(LED_D3_PIN_GPIO, &GPIO_InitStructure);					 //¸ù¾İÉè¶¨²ÎÊı³õÊ¼»¯GPIOB.3
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; //æ¨æŒ½è¾“å‡º
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//IOå£é€Ÿåº¦ä¸º50MHz
+  GPIO_Init(LED_D3_PIN_GPIO, &GPIO_InitStructure);					 //æ ¹æ®è®¾å®šå‚æ•°åˆå§‹åŒ–GPIOB.3
 	
 	GPIO_InitStructure.GPIO_Pin = LED_D4_PIN;				 //LED D4
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; //ÍÆÍìÊä³ö
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//IO¿ÚËÙ¶ÈÎª50MHz
-  GPIO_Init(LED_D4_PIN_GPIO, &GPIO_InitStructure);					 //¸ù¾İÉè¶¨²ÎÊı³õÊ¼»¯GPIOC.3
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; //æ¨æŒ½è¾“å‡º
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//IOå£é€Ÿåº¦ä¸º50MHz
+  GPIO_Init(LED_D4_PIN_GPIO, &GPIO_InitStructure);					 //æ ¹æ®è®¾å®šå‚æ•°åˆå§‹åŒ–GPIOC.3
 }
 
 void keysacn()
 {
   int val;
-  val=KEY;  //¶ÁÈ¡°´¼ü
-  while(!GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2))//µ±°´¼üÃ»ÓĞ±»°´ÏÂÊ±£¬Ò»Ö±Ñ­»·
+  val=KEY;  //è¯»å–æŒ‰é”®
+  while(!GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2))//å½“æŒ‰é”®æ²¡æœ‰è¢«æŒ‰ä¸‹æ—¶ï¼Œä¸€ç›´å¾ªç¯
   {
-    val=KEY;//´Ê¾ä¿ÉÊ¡ÂÔ£¬¿ÉÈÃÑ­»·ÅÜ¿Õ
+    val=KEY;//è¯å¥å¯çœç•¥ï¼Œå¯è®©å¾ªç¯è·‘ç©º
   }
-  while(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2))//µ±°´¼ü±»°´ÏÂÊ±
+  while(GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2))//å½“æŒ‰é”®è¢«æŒ‰ä¸‹æ—¶
   {
-    delay_ms(10);	  //ÑÓÊ±10ms
-    val=KEY;//¶ÁÈ¡Êı×Ö¶Ë¿ÚPC2¿ÚµçÆ½Öµ¸³¸øVal
-    if(val==1)  //µÚ¶ş´ÎÅĞ¶Ï°´¼üÊÇ·ñ±»°´ÏÂ
+    delay_ms(10);	  //å»¶æ—¶10ms
+    val=KEY;//è¯»å–æ•°å­—ç«¯å£PC2å£ç”µå¹³å€¼èµ‹ç»™Val
+    if(val==1)  //ç¬¬äºŒæ¬¡åˆ¤æ–­æŒ‰é”®æ˜¯å¦è¢«æŒ‰ä¸‹
     {
-      BEEP_SET;		//·äÃùÆ÷Ïì
-      while(!GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2))	//ÅĞ¶Ï°´Ê±ÊÇ·ñ±»ËÉ¿ª
-        BEEP_RESET;	//·äÃùÆ÷Í£Ö¹
+      BEEP_SET;		//èœ‚é¸£å™¨å“
+      while(!GPIO_ReadInputDataBit(GPIOC,GPIO_Pin_2))	//åˆ¤æ–­æŒ‰æ—¶æ˜¯å¦è¢«æ¾å¼€
+        BEEP_RESET;	//èœ‚é¸£å™¨åœæ­¢
     }
     else
-				BEEP_RESET;//·äÃùÆ÷Í£Ö¹
+				BEEP_RESET;//èœ‚é¸£å™¨åœæ­¢
   }
 }

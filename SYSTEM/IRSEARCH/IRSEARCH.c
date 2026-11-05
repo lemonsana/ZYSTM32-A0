@@ -1,19 +1,19 @@
-#include "IRSEARCH.h"
+ï»¿#include "IRSEARCH.h"
 #include "delay.h"
 #include "motor.h"
 #include "stm32f10x.h"
 
 /* ============================================================================
- *  Ñ­¼£Ä£¿é  v3.0
+ *  å¾ªè¿¹æ¨¡å—  v3.0
  *  --------------------------------------------------------------------------
- *  Ëã·¨À´Ô´£º¿ÉÑ­¼£°æ±¾£¨ÒÑÑéÖ¤£©
- *    - I2C ¶Á 8 Â·"¹éÒ»»¯Ä£ÄâÁ¿"£¬¼ÓÈ¨ÖØĞÄÇóÏßÎ»ÖÃ
- *    - Ò»½×µÍÍ¨ÂË²¨ + ÖĞĞÄËÀÇø + ±ÈÀı×ªÏò
- *    - ¶ªÏßÊ±³¯×îºó¿´µ½µÄ·½ÏòÔ­µØÕÒÏß£¬³¬Ê±Í£³µ
- *  ¸ÄÁ¼£º
- *    - µç»úÍ³Ò»×ß·Ç×èÈû Motor_SetSpeed()£¨v3 ÒÑ°ÑÍ¨µÀÓ³Éä¸Ä»ØÊµ²âÕıÈ·Öµ£©
- *    - ¶ªÏß³¬Ê±°´ºÁÃë¼Æ
- *    - ´®ĞĞ½Ó¿Ú×÷Îª±¸Ñ¡£¨GRAY_IF_I2C = 0£©
+ *  ç®—æ³•æ¥æºï¼šå¯å¾ªè¿¹ç‰ˆæœ¬ï¼ˆå·²éªŒè¯ï¼‰
+ *    - I2C è¯» 8 è·¯"å½’ä¸€åŒ–æ¨¡æ‹Ÿé‡"ï¼ŒåŠ æƒé‡å¿ƒæ±‚çº¿ä½ç½®
+ *    - ä¸€é˜¶ä½é€šæ»¤æ³¢ + ä¸­å¿ƒæ­»åŒº + æ¯”ä¾‹è½¬å‘
+ *    - ä¸¢çº¿æ—¶æœæœ€åçœ‹åˆ°çš„æ–¹å‘åŸåœ°æ‰¾çº¿ï¼Œè¶…æ—¶åœè½¦
+ *  æ”¹è‰¯ï¼š
+ *    - ç”µæœºç»Ÿä¸€èµ°éé˜»å¡ Motor_SetSpeed()ï¼ˆv3 å·²æŠŠé€šé“æ˜ å°„æ”¹å›å®æµ‹æ­£ç¡®å€¼ï¼‰
+ *    - ä¸¢çº¿è¶…æ—¶æŒ‰æ¯«ç§’è®¡
+ *    - ä¸²è¡Œæ¥å£ä½œä¸ºå¤‡é€‰ï¼ˆGRAY_IF_I2C = 0ï¼‰
  * ========================================================================== */
 
 #define GRAY_I2C_DELAY_US        5
@@ -21,29 +21,29 @@
 #define GRAY_PING_INTERVAL_MS    20
 #define GRAY_MIN_ACTIVE_WEIGHT   100
 
-/* ´®ĞĞ½Ó¿ÚµÄ¼«ĞÔ£ºÄ£¿é DAT µÄ bit Îª 1 Ê±ÊÇºÚÏß(1) »¹ÊÇ°×µ×(0) */
+/* ä¸²è¡Œæ¥å£çš„ææ€§ï¼šæ¨¡å— DAT çš„ bit ä¸º 1 æ—¶æ˜¯é»‘çº¿(1) è¿˜æ˜¯ç™½åº•(0) */
 #define GRAY_SERIAL_BIT_IS_BLACK 0
 
-static u8     gray_ready = 0;       /* ´«¸ĞÆ÷¾ÍĞ÷ */
+static u8     gray_ready = 0;       /* ä¼ æ„Ÿå™¨å°±ç»ª */
 static u8     gray_filter_ready = 0;
 static int16_t gray_filtered_error = 0;
 static int16_t gray_last_error = 0;
 static u16    gray_lost_ms = 0;
 
-static int16_t gray_last_raw_error = 0;   /* ×î½üÒ»´ÎÔ­Ê¼Îó²î£¨µ÷ÊÔÓÃ£© */
+static int16_t gray_last_raw_error = 0;   /* æœ€è¿‘ä¸€æ¬¡åŸå§‹è¯¯å·®ï¼ˆè°ƒè¯•ç”¨ï¼‰ */
 
-/* ---- v3.1 PID ×´Ì¬ ---- */
-static int32_t gray_i_sum      = 0;       /* »ı·ÖÀÛ¼Ó£¬µ¥Î»£ºÎó²î¡¤ºÁÃë */
-static int16_t gray_prev_error = 0;       /* ÉÏÒ»Ö¡Îó²î£¨D ÏîÓÃ£© */
-static int16_t gray_correction = 0;       /* ×î½üÒ»´Î PID Êä³ö£¨µ÷ÊÔÓÃ£© */
-static int16_t gray_base_speed = 0;       /* ×î½üÒ»´Îµ÷¶ÈºóµÄ»ù´¡ËÙ¶È£¨µ÷ÊÔÓÃ£© */
+/* ---- v3.1 PID çŠ¶æ€ ---- */
+static int32_t gray_i_sum      = 0;       /* ç§¯åˆ†ç´¯åŠ ï¼Œå•ä½ï¼šè¯¯å·®Â·æ¯«ç§’ */
+static int16_t gray_prev_error = 0;       /* ä¸Šä¸€å¸§è¯¯å·®ï¼ˆD é¡¹ç”¨ï¼‰ */
+static int16_t gray_correction = 0;       /* æœ€è¿‘ä¸€æ¬¡ PID è¾“å‡ºï¼ˆè°ƒè¯•ç”¨ï¼‰ */
+static int16_t gray_base_speed = 0;       /* æœ€è¿‘ä¸€æ¬¡è°ƒåº¦åçš„åŸºç¡€é€Ÿåº¦ï¼ˆè°ƒè¯•ç”¨ï¼‰ */
 
-/* Ì½Í·Î»ÖÃÈ¨ÖØ£ºÏÂ±ê 0 = Í¨µÀ1£¨×î×ó£©¡­¡­ ÏÂ±ê 7 = Í¨µÀ8£¨×îÓÒ£©
- * Óë"¿ÉÑ­¼£°æ±¾"Ò»ÖÂ£»ÈôÊµ³µ·½ÏòÏà·´£¬°Ñ GRAY_CHANNEL_MIRROR ¸Ä³É 1 */
+/* æ¢å¤´ä½ç½®æƒé‡ï¼šä¸‹æ ‡ 0 = é€šé“1ï¼ˆæœ€å·¦ï¼‰â€¦â€¦ ä¸‹æ ‡ 7 = é€šé“8ï¼ˆæœ€å³ï¼‰
+ * ä¸"å¯å¾ªè¿¹ç‰ˆæœ¬"ä¸€è‡´ï¼›è‹¥å®è½¦æ–¹å‘ç›¸åï¼ŒæŠŠ GRAY_CHANNEL_MIRROR æ”¹æˆ 1 */
 static const int8_t gray_position_weight[8] = { -7, -5, -3, -1, 1, 3, 5, 7 };
 
 /* ==========================================================================
- *  ½Ó¿Ú²ã£ºI2C
+ *  æ¥å£å±‚ï¼šI2C
  * ========================================================================== */
 #if GRAY_IF_I2C
 
@@ -58,7 +58,7 @@ static void gray_i2c_delay(void)
     delay_us(GRAY_I2C_DELAY_US);
 }
 
-/* ×ÜÏß»Ö¸´£ºSDA ±»´Ó»úÀ­ËÀÊ±£¬´ò 9 ¸öÊ±ÖÓ°ÑËü·Å³öÀ´ */
+/* æ€»çº¿æ¢å¤ï¼šSDA è¢«ä»æœºæ‹‰æ­»æ—¶ï¼Œæ‰“ 9 ä¸ªæ—¶é’ŸæŠŠå®ƒæ”¾å‡ºæ¥ */
 static void gray_i2c_bus_recover(void)
 {
     u8 i;
@@ -98,7 +98,7 @@ static void gray_i2c_stop(void)
     gray_i2c_delay();
 }
 
-/* Ğ´ 1 ×Ö½Ú£¬·µ»Ø 0 = ACK */
+/* å†™ 1 å­—èŠ‚ï¼Œè¿”å› 0 = ACK */
 static u8 gray_i2c_write_byte(u8 value)
 {
     u8 i;
@@ -127,7 +127,7 @@ static u8 gray_i2c_write_byte(u8 value)
     return nack;
 }
 
-/* ¶Á 1 ×Ö½Ú£»ack=1 ±íÊ¾¸øÓ¦´ğ(¼ÌĞø¶Á)£¬0 ±íÊ¾²»Ó¦´ğ(×îºóÒ»×Ö½Ú) */
+/* è¯» 1 å­—èŠ‚ï¼›ack=1 è¡¨ç¤ºç»™åº”ç­”(ç»§ç»­è¯»)ï¼Œ0 è¡¨ç¤ºä¸åº”ç­”(æœ€åä¸€å­—èŠ‚) */
 static u8 gray_i2c_read_byte(u8 ack)
 {
     u8 i;
@@ -226,9 +226,9 @@ static u8 gray_iface_ping(void)
 
 static u8 gray_iface_config(void)
 {
-    if (!gray_i2c_write_reg(GW_GRAY_CHANNEL_EN, 0xFF)) return 0;   /* 8 Í¨µÀÈ«¿ª */
-    if (!gray_i2c_write_reg(GW_GRAY_NORMALIZE,  0xFF)) return 0;   /* ¹éÒ»»¯´ò¿ª */
-    delay_ms(10);                                                   /* µÈÄ£¿éË¢ĞÂ */
+    if (!gray_i2c_write_reg(GW_GRAY_CHANNEL_EN, 0xFF)) return 0;   /* 8 é€šé“å…¨å¼€ */
+    if (!gray_i2c_write_reg(GW_GRAY_NORMALIZE,  0xFF)) return 0;   /* å½’ä¸€åŒ–æ‰“å¼€ */
+    delay_ms(10);                                                   /* ç­‰æ¨¡å—åˆ·æ–° */
     return 1;
 }
 
@@ -238,7 +238,7 @@ static u8 gray_iface_read(u8 *values8)
 }
 
 /* ==========================================================================
- *  ½Ó¿Ú²ã£º´®ĞĞ CLK/DAT£¨±¸Ñ¡£©
+ *  æ¥å£å±‚ï¼šä¸²è¡Œ CLK/DATï¼ˆå¤‡é€‰ï¼‰
  * ========================================================================== */
 #else
 
@@ -267,7 +267,7 @@ static void gray_iface_init(void)
 
 static u8 gray_iface_ping(void)
 {
-    return 1;       /* ´®ĞĞ½Ó¿ÚÃ»ÓĞÓ¦´ğ»úÖÆ£¬¶ÁÒ»´Î¾ÍÖªµÀ */
+    return 1;       /* ä¸²è¡Œæ¥å£æ²¡æœ‰åº”ç­”æœºåˆ¶ï¼Œè¯»ä¸€æ¬¡å°±çŸ¥é“ */
 }
 
 static u8 gray_iface_config(void)
@@ -275,7 +275,7 @@ static u8 gray_iface_config(void)
     return 1;
 }
 
-/* ´®ĞĞ¶Á 8 Î»£¬ÔÙ»»Ëã³É 0/255 µÄ"Ä£ÄâÁ¿"£¬·½±ã¸´ÓÃÍ¬Ò»Ì×ÖØĞÄËã·¨ */
+/* ä¸²è¡Œè¯» 8 ä½ï¼Œå†æ¢ç®—æˆ 0/255 çš„"æ¨¡æ‹Ÿé‡"ï¼Œæ–¹ä¾¿å¤ç”¨åŒä¸€å¥—é‡å¿ƒç®—æ³• */
 static u8 gray_iface_read(u8 *values8)
 {
     u8 i, bits = 0;
@@ -303,7 +303,7 @@ static u8 gray_iface_read(u8 *values8)
 #endif  /* GRAY_IF_I2C */
 
 /* ==========================================================================
- *  ¹«¹²²ã£º³õÊ¼»¯ + Ñ­¼£¿ØÖÆ
+ *  å…¬å…±å±‚ï¼šåˆå§‹åŒ– + å¾ªè¿¹æ§åˆ¶
  * ========================================================================== */
 
 void IRSearchInit(void)
@@ -315,7 +315,7 @@ void IRSearchInit(void)
     gray_lost_ms      = 0;
 
     gray_iface_init();
-    delay_ms(50);                   /* µÈÄ£¿éÉÏµçÎÈ¶¨ */
+    delay_ms(50);                   /* ç­‰æ¨¡å—ä¸Šç”µç¨³å®š */
 
     if (!gray_iface_ping())  return;
     if (!gray_iface_config()) return;
@@ -323,8 +323,8 @@ void IRSearchInit(void)
     gray_ready = 1;
 }
 
-/* ¶ÁÒ»´Î²¢Ëã³öÏßÎ»ÖÃÎó²î
- * ·µ»Ø£º1 ÕÒµ½Ïß£¨*error = -100~+100£©£»2 ¶ªÏß£»0 ¶ÁÊ§°Ü
+/* è¯»ä¸€æ¬¡å¹¶ç®—å‡ºçº¿ä½ç½®è¯¯å·®
+ * è¿”å›ï¼š1 æ‰¾åˆ°çº¿ï¼ˆ*error = -100~+100ï¼‰ï¼›2 ä¸¢çº¿ï¼›0 è¯»å¤±è´¥
  */
 static u8 gray_calc_error(int16_t *error)
 {
@@ -339,7 +339,7 @@ static u8 gray_calc_error(int16_t *error)
 
     for (i = 0; i < 8; i++)
     {
-        /* ¹éÒ»»¯ºó£º°×¡Ö255£¬ºÚ¡Ö0¡£Ô½ºÚÈ¨ÖØÔ½´ó */
+        /* å½’ä¸€åŒ–åï¼šç™½â‰ˆ255ï¼Œé»‘â‰ˆ0ã€‚è¶Šé»‘æƒé‡è¶Šå¤§ */
         weight = (int16_t)GRAY_BLACK_CUTOFF - (int16_t)values[i];
         if (weight < 0) weight = 0;
 
@@ -351,30 +351,30 @@ static u8 gray_calc_error(int16_t *error)
         sum_position += (int32_t)weight * pos;
     }
 
-    if (sum_weight < GRAY_MIN_ACTIVE_WEIGHT) return 2;      /* Ã»ÓĞÌ½Í·Ñ¹Ïß */
+    if (sum_weight < GRAY_MIN_ACTIVE_WEIGHT) return 2;      /* æ²¡æœ‰æ¢å¤´å‹çº¿ */
 
     *error = (int16_t)((sum_position * 100L) / (sum_weight * 7L));
     return 1;
 }
 
 /* ============================================================================
- *  Ñ­¼£Ö÷ÈÎÎñ£¨Ö÷Ñ­»·Ã¿ GRAY_FRAME_MS µ÷ÓÃÒ»´Î£©
+ *  å¾ªè¿¹ä¸»ä»»åŠ¡ï¼ˆä¸»å¾ªç¯æ¯ GRAY_FRAME_MS è°ƒç”¨ä¸€æ¬¡ï¼‰
  *  ----------------------------------------------------------------------------
- *  Ò»Ö¡µÄ´¦ÀíË³Ğò£¨µ÷ÊÔÊ±°´Õâ¸öË³ĞòÅÅ²é£©£º
- *      1. gray_calc_error()   ¶Á 8 Â·Ä£ÄâÁ¿ ¡ú ¼ÓÈ¨ÖØĞÄ ¡ú Ô­Ê¼Îó²î raw_error
- *                             ·µ»Ø 0=¶ÁÊ§°Ü / 1=ÕÒµ½Ïß / 2=¶ªÏß
- *      2. ¶ªÏß·ÖÖ§           ³¯"×îºó¿´µ½µÄ·½Ïò"Ô­µØ×ª×ÅÕÒ£¬³¬Ê±Í£³µ
- *      3. Ò»½×µÍÍ¨            ÂËµôµ¥Ö¡ÔëÉù£¬en = (en-1¡Á3 + raw)/4
- *      4. ËÀÇø                ÖĞÏß¸½½üÇ¿ÖÆ¹éÁã£¬±ÜÃâÔ­µØ¶¶
- *      5. ËÙ¶Èµ÷¶È            base Ëæ |Îó²î| ºÍ |Îó²î±ä»¯| ÏÂ½µ
- *      6. ÔöÒæµ÷¶È            Ğ¡Îó²îÓÃ GAIN£¬´óÎó²îÓÃ GAIN_FAR
- *      7. PID                 ¼ÆËã correction
- *      8. Êä³ö                ×ó=base+corr£¬ÓÒ=base6Ó1corr£¬ÏŞ·ùºóĞ´µç»ú
+ *  ä¸€å¸§çš„å¤„ç†é¡ºåºï¼ˆè°ƒè¯•æ—¶æŒ‰è¿™ä¸ªé¡ºåºæ’æŸ¥ï¼‰ï¼š
+ *      1. gray_calc_error()   è¯» 8 è·¯æ¨¡æ‹Ÿé‡ â†’ åŠ æƒé‡å¿ƒ â†’ åŸå§‹è¯¯å·® raw_error
+ *                             è¿”å› 0=è¯»å¤±è´¥ / 1=æ‰¾åˆ°çº¿ / 2=ä¸¢çº¿
+ *      2. ä¸¢çº¿åˆ†æ”¯           æœ"æœ€åçœ‹åˆ°çš„æ–¹å‘"åŸåœ°è½¬ç€æ‰¾ï¼Œè¶…æ—¶åœè½¦
+ *      3. ä¸€é˜¶ä½é€š            æ»¤æ‰å•å¸§å™ªå£°ï¼Œen = (en-1Ã—3 + raw)/4
+ *      4. æ­»åŒº                ä¸­çº¿é™„è¿‘å¼ºåˆ¶å½’é›¶ï¼Œé¿å…åŸåœ°æŠ–
+ *      5. é€Ÿåº¦è°ƒåº¦            base éš |è¯¯å·®| å’Œ |è¯¯å·®å˜åŒ–| ä¸‹é™
+ *      6. å¢ç›Šè°ƒåº¦            å°è¯¯å·®ç”¨ GAINï¼Œå¤§è¯¯å·®ç”¨ GAIN_FAR
+ *      7. PID                 è®¡ç®— correction
+ *      8. è¾“å‡º                å·¦=base+corrï¼Œå³=baseâˆ’corrï¼Œé™å¹…åå†™ç”µæœº
  *
- *  µ÷ÊÔ½¨Òé£º´®¿ÚÀï err / corr / spd Èı¸öÊıÒ»Æğ¿´
- *      err  = Ô­Ê¼Îó²î£¨¡À100£¬999=¶ªÏß£©
- *      corr = PID Êä³ö£¨¡ÀGAIN ¸½½ü£¬¶¥µ½ ¡À50 ËµÃ÷Âú¶æ£©
- *      spd  = µ÷¶ÈºóµÄ»ù´¡ËÙ¶È£¨×îµÍ GRAY_MIN_SPEED£©
+ *  è°ƒè¯•å»ºè®®ï¼šä¸²å£é‡Œ err / corr / spd ä¸‰ä¸ªæ•°ä¸€èµ·çœ‹
+ *      err  = åŸå§‹è¯¯å·®ï¼ˆÂ±100ï¼Œ999=ä¸¢çº¿ï¼‰
+ *      corr = PID è¾“å‡ºï¼ˆÂ±GAIN é™„è¿‘ï¼Œé¡¶åˆ° Â±50 è¯´æ˜æ»¡èˆµï¼‰
+ *      spd  = è°ƒåº¦åçš„åŸºç¡€é€Ÿåº¦ï¼ˆæœ€ä½ GRAY_MIN_SPEEDï¼‰
  * ========================================================================== */
 void SearchRun(void)
 {
@@ -402,32 +402,32 @@ void SearchRun(void)
 
     result = gray_calc_error(&raw_error);
 
-    if (result == 0)                    /* I2C ¶ÁÊ§°Ü£ºÍ£³µµÈÏÂÒ»Ö¡ */
+    if (result == 0)                    /* I2C è¯»å¤±è´¥ï¼šåœè½¦ç­‰ä¸‹ä¸€å¸§ */
     {
         gray_i_sum = 0;
         Motor_Stop();
         return;
     }
 
-    if (result == 2)                    /* ¶ªÏß£º³¯×îºó·½ÏòÕÒÏß */
+    if (result == 2)                    /* ä¸¢çº¿ï¼šæœæœ€åæ–¹å‘æ‰¾çº¿ */
     {
         gray_filter_ready = 0;
         gray_last_raw_error = 999;
-        gray_i_sum = 0;                 /* ¶ªÏßÊ±Çå»ı·Ö£¬·ÀÖ¹»Ö¸´ºóÃÍ³å */
+        gray_i_sum = 0;                 /* ä¸¢çº¿æ—¶æ¸…ç§¯åˆ†ï¼Œé˜²æ­¢æ¢å¤åçŒ›å†² */
 
         if (gray_lost_ms < GRAY_LOST_STOP_MS) gray_lost_ms += GRAY_FRAME_MS;
 
         if (gray_lost_ms >= GRAY_LOST_STOP_MS)
         {
-            Motor_Stop();               /* ÕÒÌ«¾Ã ¡ú Í£³µ */
+            Motor_Stop();               /* æ‰¾å¤ªä¹… â†’ åœè½¦ */
         }
         else if (gray_last_error > GRAY_CENTER_DEADBAND)
         {
-            Motor_SetSpeed( GRAY_LOST_SPIN_SPEED, -GRAY_LOST_SPIN_SPEED);   /* ÏòÓÒÕÒ */
+            Motor_SetSpeed( GRAY_LOST_SPIN_SPEED, -GRAY_LOST_SPIN_SPEED);   /* å‘å³æ‰¾ */
         }
         else if (gray_last_error < -GRAY_CENTER_DEADBAND)
         {
-            Motor_SetSpeed(-GRAY_LOST_SPIN_SPEED,  GRAY_LOST_SPIN_SPEED);   /* Ïò×óÕÒ */
+            Motor_SetSpeed(-GRAY_LOST_SPIN_SPEED,  GRAY_LOST_SPIN_SPEED);   /* å‘å·¦æ‰¾ */
         }
         else
         {
@@ -439,7 +439,7 @@ void SearchRun(void)
     gray_lost_ms = 0;
     gray_last_raw_error = raw_error;
 
-    /* Ò»½×µÍÍ¨ÂË²¨£¬ÒÖÖÆµ¥Ö¡Ìø±ä */
+    /* ä¸€é˜¶ä½é€šæ»¤æ³¢ï¼ŒæŠ‘åˆ¶å•å¸§è·³å˜ */
     if (!gray_filter_ready)
     {
         gray_filtered_error = raw_error;
@@ -453,29 +453,29 @@ void SearchRun(void)
     error = gray_filtered_error;
     if (error > -GRAY_CENTER_DEADBAND && error < GRAY_CENTER_DEADBAND)
     {
-        error = 0;                      /* ÖĞĞÄËÀÇø */
+        error = 0;                      /* ä¸­å¿ƒæ­»åŒº */
     }
     gray_last_error = error;
 
-    /* ---------------- PID ¿ØÖÆ£¨v3.3£º°´ 12cm Ç°ÊÓ¾àÀëÖØµ÷£© ----------------
-     *   ÔöÒæµ÷¶È£º|Îó²î| ¡Ü FAR_THRESHOLD ÓÃ GAIN£¬³¬¹ıÓÃ GAIN_FAR£¨¼±Íä¸üÓ²£©
-     *   ËÙ¶Èµ÷¶È£ºbase Ëæ |Îó²î| ÏÂ½µ£»ÁíÍâ"Îó²î±ä»¯Ô½¿ì"Ò²¼õËÙ£¨½øÍäÇ°ÏÈÊÕÓÍ£©
-     *   ÄÚÂÖÔÊĞí·´×ª£º|Îó²î| ´óÊ±ÄÚ²àÂÖ¿ÉÒÔ¸øµ½ -INNER_REVERSE£¬ÏÔÖø¼õĞ¡×ªÍä°ë¾¶
+    /* ---------------- PID æ§åˆ¶ï¼ˆv3.3ï¼šæŒ‰ 12cm å‰è§†è·ç¦»é‡è°ƒï¼‰ ----------------
+     *   å¢ç›Šè°ƒåº¦ï¼š|è¯¯å·®| â‰¤ FAR_THRESHOLD ç”¨ GAINï¼Œè¶…è¿‡ç”¨ GAIN_FARï¼ˆæ€¥å¼¯æ›´ç¡¬ï¼‰
+     *   é€Ÿåº¦è°ƒåº¦ï¼šbase éš |è¯¯å·®| ä¸‹é™ï¼›å¦å¤–"è¯¯å·®å˜åŒ–è¶Šå¿«"ä¹Ÿå‡é€Ÿï¼ˆè¿›å¼¯å‰å…ˆæ”¶æ²¹ï¼‰
+     *   å†…è½®å…è®¸åè½¬ï¼š|è¯¯å·®| å¤§æ—¶å†…ä¾§è½®å¯ä»¥ç»™åˆ° -INNER_REVERSEï¼Œæ˜¾è‘—å‡å°è½¬å¼¯åŠå¾„
      * -------------------------------------------------------------------- */
     abs_e = (error >= 0) ? error : -error;
 
-    /* Îó²î±ä»¯ÂÊ£¨ÅĞ¶ÏÊÇ·ñÕıÔÚ½øÈëÍäµÀ£© */
+    /* è¯¯å·®å˜åŒ–ç‡ï¼ˆåˆ¤æ–­æ˜¯å¦æ­£åœ¨è¿›å…¥å¼¯é“ï¼‰ */
     d_err = (int16_t)(error - gray_prev_error);
     abs_de = (d_err >= 0) ? d_err : -d_err;
 
-    /* ËÙ¶Èµ÷¶È£º´óÎó²î + ´ó±ä»¯ÂÊ ¡ú ¼õËÙ */
+    /* é€Ÿåº¦è°ƒåº¦ï¼šå¤§è¯¯å·® + å¤§å˜åŒ–ç‡ â†’ å‡é€Ÿ */
     base_speed = (int16_t)(GRAY_BASE_SPEED
                          - (abs_e  * GRAY_SLOW_GAIN)   / 100
                          - (abs_de * GRAY_SLOW_D_GAIN) / 100);
     if (base_speed < GRAY_MIN_SPEED) base_speed = GRAY_MIN_SPEED;
     gray_base_speed = base_speed;
 
-    /* ÔöÒæµ÷¶È */
+    /* å¢ç›Šè°ƒåº¦ */
     gain = (abs_e > GRAY_FAR_THRESHOLD) ? GRAY_STEER_GAIN_FAR : GRAY_STEER_GAIN;
 
     p_term = (int16_t)((int32_t)error * gain / 100L);
@@ -483,7 +483,7 @@ void SearchRun(void)
 #if GRAY_KI > 0
     if (error == 0)
     {
-        /* ÒÑ¾­»ØÖĞÏß£ºÈÃ»ı·ÖÂıÂıĞ¹·Å£¬±ÜÃâ"µ½µãÁË»¹ÔÚÍùÒ»±ßÅ¡" */
+        /* å·²ç»å›ä¸­çº¿ï¼šè®©ç§¯åˆ†æ…¢æ…¢æ³„æ”¾ï¼Œé¿å…"åˆ°ç‚¹äº†è¿˜åœ¨å¾€ä¸€è¾¹æ‹§" */
         gray_i_sum = (gray_i_sum * 99L) / 100L;
     }
     else
@@ -510,7 +510,7 @@ void SearchRun(void)
     left_speed  = base_speed + correction;
     right_speed = base_speed - correction;
 
-    /* ¼±ÍäÊ±ÔÊĞíÄÚÂÖµ¹×ª£¨"Ô­µØ´ê"ÄÜ¹ı 180¡ã£©£¬µ«ÒªÏŞ·ù·ÀÖ¹Ô­µØ´ò×ª */
+    /* æ€¥å¼¯æ—¶å…è®¸å†…è½®å€’è½¬ï¼ˆ"åŸåœ°æ“"èƒ½è¿‡ 180Â°ï¼‰ï¼Œä½†è¦é™å¹…é˜²æ­¢åŸåœ°æ‰“è½¬ */
     if (left_speed  < -GRAY_INNER_REVERSE) left_speed  = -GRAY_INNER_REVERSE;
     if (left_speed  >  95)                 left_speed  =  95;
     if (right_speed < -GRAY_INNER_REVERSE) right_speed = -GRAY_INNER_REVERSE;
@@ -519,13 +519,13 @@ void SearchRun(void)
     Motor_SetSpeed(left_speed, right_speed);
 }
 
-/* ---------------- µ÷ÊÔ½Ó¿Ú ---------------- */
+/* ---------------- è°ƒè¯•æ¥å£ ---------------- */
 u8 Gray_IsReady(void)   { return gray_ready; }
 int Gray_GetError(void) { return gray_last_raw_error; }
 int Gray_GetCorrection(void) { return gray_correction; }
 int Gray_GetBaseSpeed(void) { return gray_base_speed; }
 
-/* Çå»ı·Ö£ºÇĞÄ£Ê½¡¢ÖØĞÂÉÏÂ·¡¢ÊÖ¶¯¸´Î»Ê±µ÷ÓÃ */
+/* æ¸…ç§¯åˆ†ï¼šåˆ‡æ¨¡å¼ã€é‡æ–°ä¸Šè·¯ã€æ‰‹åŠ¨å¤ä½æ—¶è°ƒç”¨ */
 void Gray_ResetIntegral(void)
 {
     gray_i_sum      = 0;
@@ -534,8 +534,8 @@ void Gray_ResetIntegral(void)
     gray_lost_ms    = 0;
 }
 
-/* ÊÇ·ñÑ¹µ½ºÚÏß£ºÈÎÒâÒ»Â·¹éÒ»»¯Öµ < GRAY_BLACK_CUTOFF ¼´ËãÑ¹Ïß
- * ÈÚºÏÄ£Ê½£¨Ñ­¼£+±ÜÕÏ£©ÈÆÍêÕÏ°­ºó£¬ÓÃËüÅĞ¶ÏÓĞÃ»ÓĞÖØĞÂÕÒµ½Ïß */
+/* æ˜¯å¦å‹åˆ°é»‘çº¿ï¼šä»»æ„ä¸€è·¯å½’ä¸€åŒ–å€¼ < GRAY_BLACK_CUTOFF å³ç®—å‹çº¿
+ * èåˆæ¨¡å¼ï¼ˆå¾ªè¿¹+é¿éšœï¼‰ç»•å®Œéšœç¢åï¼Œç”¨å®ƒåˆ¤æ–­æœ‰æ²¡æœ‰é‡æ–°æ‰¾åˆ°çº¿ */
 u8 Gray_IsOnLine(void)
 {
     u8 values[8];

@@ -1,85 +1,85 @@
-#ifndef __MOTOR_H_
+ï»¿#ifndef __MOTOR_H_
 #define __MOTOR_H_
 
 #include "stm32f10x.h"
 
-/* ================== µç»úÇı¶¯£¨ZYSTM32-A0 Ö÷°å£©  v3.0 ==================
+/* ================== ç”µæœºé©±åŠ¨ï¼ˆZYSTM32-A0 ä¸»æ¿ï¼‰  v3.0 ==================
  *
- *  ¡ï¡ï¡ï ÖØÒª¸üÕı£¨v3 Ïà±È v2.x µÄ¹Ø¼üĞŞ¸´£© ¡ï¡ï¡ï
+ *  â˜…â˜…â˜… é‡è¦æ›´æ­£ï¼ˆv3 ç›¸æ¯” v2.x çš„å…³é”®ä¿®å¤ï¼‰ â˜…â˜…â˜…
  *
- *  v2.0 Ôø°Ñ"ÓÒÂÖ"´Ó CH3 ¸Äµ½ CH4£¬ÕâÊÇ**´íµÄ**£¬µ¼ÖÂ v2.x ³µ×ÓÅÜ²»Ö±Ïß¡£
- *  ÒÀ¾İ£º°Ñ"¿ÉÑ­¼£°æ±¾"£¨Ö»¸ÄÁË IRSEARCH.c£¬motor.c ±£³ÖÔ­³§£©Óë v1.0 ¶Ô±È£¬
- *        ËüÓÃµÄ¾ÍÊÇÔ­³§Ó³Éä£¬ÇÒÊµ³µÄÜÎÈ¶¨Ñ­¼£ ¡ª¡ª ËµÃ÷Ô­³§Í¨µÀÊÇ¶ÔµÄ¡£
+ *  v2.0 æ›¾æŠŠ"å³è½®"ä» CH3 æ”¹åˆ° CH4ï¼Œè¿™æ˜¯**é”™çš„**ï¼Œå¯¼è‡´ v2.x è½¦å­è·‘ä¸ç›´çº¿ã€‚
+ *  ä¾æ®ï¼šæŠŠ"å¯å¾ªè¿¹ç‰ˆæœ¬"ï¼ˆåªæ”¹äº† IRSEARCH.cï¼Œmotor.c ä¿æŒåŸå‚ï¼‰ä¸ v1.0 å¯¹æ¯”ï¼Œ
+ *        å®ƒç”¨çš„å°±æ˜¯åŸå‚æ˜ å°„ï¼Œä¸”å®è½¦èƒ½ç¨³å®šå¾ªè¿¹ â€”â€” è¯´æ˜åŸå‚é€šé“æ˜¯å¯¹çš„ã€‚
  *
- *  Êµ¼Ê½ÓÏß£¨ÒÔ³µÄÜÅÜÍ¨Îª×¼£©£º
- *      ×óµç»ú£º ·½Ïò PB7 (Ë¿Ó¡ IO8)      PWM PB9 = TIM4_CH4 (Ë¿Ó¡ IO10)
- *      ÓÒµç»ú£º ·½Ïò PA4 (Ë¿Ó¡ IO11)     PWM PB8 = TIM4_CH3 (Ë¿Ó¡ IO9)
+ *  å®é™…æ¥çº¿ï¼ˆä»¥è½¦èƒ½è·‘é€šä¸ºå‡†ï¼‰ï¼š
+ *      å·¦ç”µæœºï¼š æ–¹å‘ PB7 (ä¸å° IO8)      PWM PB9 = TIM4_CH4 (ä¸å° IO10)
+ *      å³ç”µæœºï¼š æ–¹å‘ PA4 (ä¸å° IO11)     PWM PB8 = TIM4_CH3 (ä¸å° IO9)
  *
- *  ·½Ïò½Å¼«ĞÔ£¨Á½ÂÖÏàÍ¬£©£º
- *      µÍµçÆ½ = Õı×ª£¨Ç°½ø£©      ¸ßµçÆ½ = ·´×ª£¨ºóÍË£©
+ *  æ–¹å‘è„šææ€§ï¼ˆä¸¤è½®ç›¸åŒï¼‰ï¼š
+ *      ä½ç”µå¹³ = æ­£è½¬ï¼ˆå‰è¿›ï¼‰      é«˜ç”µå¹³ = åè½¬ï¼ˆåé€€ï¼‰
  *
- *  ×¢Òâ£ºmotor.h Àï RIGHT_MOTOR_PWM / LEFT_MOTOR_PWM Á½¸öºêµÄÃû×ÖÓëÊµ²â
- *        Ïà·´£¨ÀúÊ·ÒÅÁô£©£¬±¾ÎÄ¼şÒÑ°´Êµ²â°Ñ×¢ÊÍĞ´Çå³ş£¬ºêÃû±£³Ö²»±äÒÔÃâ
- *        Ó°ÏìÆäËü´úÂë¡£
+ *  æ³¨æ„ï¼šmotor.h é‡Œ RIGHT_MOTOR_PWM / LEFT_MOTOR_PWM ä¸¤ä¸ªå®çš„åå­—ä¸å®æµ‹
+ *        ç›¸åï¼ˆå†å²é—ç•™ï¼‰ï¼Œæœ¬æ–‡ä»¶å·²æŒ‰å®æµ‹æŠŠæ³¨é‡Šå†™æ¸…æ¥šï¼Œå®åä¿æŒä¸å˜ä»¥å…
+ *        å½±å“å…¶å®ƒä»£ç ã€‚
  * ====================================================================== */
 
-/* ·½Ïò·´×ª¿ª¹Ø£ºÈôÊµ²âÄ³¸öÂÖ×ÓÕı·´×ªÏà·´£¬°Ñ¶ÔÓ¦ºê¸Ä³É 1£¨²»ÓÃ¸Ä½ÓÏß£© */
+/* æ–¹å‘åè½¬å¼€å…³ï¼šè‹¥å®æµ‹æŸä¸ªè½®å­æ­£åè½¬ç›¸åï¼ŒæŠŠå¯¹åº”å®æ”¹æˆ 1ï¼ˆä¸ç”¨æ”¹æ¥çº¿ï¼‰ */
 #define MOTOR_DIR_INVERT_L      0
 #define MOTOR_DIR_INVERT_R      0
 
-/* PWM Í¨µÀ½»²æ¿ª¹Ø£º
- * 0 = Õı³££¨×óÂÖ CH4/PB9£¬ÓÒÂÖ CH3/PB8£©¡ª¡ª Óë±¾³µÊµ²âÒ»ÖÂ
- * 1 = Èç¹ûÄãµÄ°å×Ó·´¹ıÀ´£¬¸Ä³É 1 ¿ÉÕûÌå·­×ª */
+/* PWM é€šé“äº¤å‰å¼€å…³ï¼š
+ * 0 = æ­£å¸¸ï¼ˆå·¦è½® CH4/PB9ï¼Œå³è½® CH3/PB8ï¼‰â€”â€” ä¸æœ¬è½¦å®æµ‹ä¸€è‡´
+ * 1 = å¦‚æœä½ çš„æ¿å­åè¿‡æ¥ï¼Œæ”¹æˆ 1 å¯æ•´ä½“ç¿»è½¬ */
 #define MOTOR_PWM_CH_SWAP       0
 
-/* PWM ¶¨Ê±Æ÷²ÎÊı£º72MHz / (0+1) / (7199+1) = 10kHz */
-#define MOTOR_PWM_ARR           7200    /* ×Ô¶¯ÖØ×°Öµ + 1 */
+/* PWM å®šæ—¶å™¨å‚æ•°ï¼š72MHz / (0+1) / (7199+1) = 10kHz */
+#define MOTOR_PWM_ARR           7200    /* è‡ªåŠ¨é‡è£…å€¼ + 1 */
 
-/* ------------------------- ·Ç×èÈû½Ó¿Ú£¨ÍÆ¼ö£© ------------------------- */
-/* ÉèÖÃ×óÓÒÂÖËÙ¶È£¬·¶Î§ -100 ~ +100£¨°Ù·Ö±È£©£¬ÕıÊıÇ°½ø¡£
- * Ö»Ğ´¼Ä´æÆ÷£¬Á¢¼´·µ»Ø¡£ */
+/* ------------------------- éé˜»å¡æ¥å£ï¼ˆæ¨èï¼‰ ------------------------- */
+/* è®¾ç½®å·¦å³è½®é€Ÿåº¦ï¼ŒèŒƒå›´ -100 ~ +100ï¼ˆç™¾åˆ†æ¯”ï¼‰ï¼Œæ­£æ•°å‰è¿›ã€‚
+ * åªå†™å¯„å­˜å™¨ï¼Œç«‹å³è¿”å›ã€‚ */
 void Motor_SetSpeed(int left, int right);
 void Motor_Stop(void);
 void Motor_Init(void);
 
-int  Motor_GetLeft(void);           /* µ±Ç°Éè¶¨ËÙ¶È£¨µ÷ÊÔ´òÓ¡ÓÃ£© */
+int  Motor_GetLeft(void);           /* å½“å‰è®¾å®šé€Ÿåº¦ï¼ˆè°ƒè¯•æ‰“å°ç”¨ï¼‰ */
 int  Motor_GetRight(void);
 
-/* --------------------- ¼æÈİÔ­³§½Ó¿Ú£¨ÓïÒåÓë v1.0 ÍêÈ«Ò»ÖÂ£© ---------------------
- * SetMotorSpeed(ch, speed)£º
- *      ch = 0 ÓÒÂÖ£¬speed > 0 Ç°½ø£¬< 0 ºóÍË
- *      ch = 1 ×óÂÖ£¬speed < 0 Ç°½ø£¬> 0 ºóÍË   ¡û ÓëÔ­³§Ò»ÖÂ£¬×¢Òâ·ûºÅÏà·´£¡
- * ZYSTM32_xxx()£º×èÈûÊ½¶¯×÷º¯Êı£¬ÄÚ²¿ = ÉèÖÃËÙ¶È + delay_ms
+/* --------------------- å…¼å®¹åŸå‚æ¥å£ï¼ˆè¯­ä¹‰ä¸ v1.0 å®Œå…¨ä¸€è‡´ï¼‰ ---------------------
+ * SetMotorSpeed(ch, speed)ï¼š
+ *      ch = 0 å³è½®ï¼Œspeed > 0 å‰è¿›ï¼Œ< 0 åé€€
+ *      ch = 1 å·¦è½®ï¼Œspeed < 0 å‰è¿›ï¼Œ> 0 åé€€   â† ä¸åŸå‚ä¸€è‡´ï¼Œæ³¨æ„ç¬¦å·ç›¸åï¼
+ * ZYSTM32_xxx()ï¼šé˜»å¡å¼åŠ¨ä½œå‡½æ•°ï¼Œå†…éƒ¨ = è®¾ç½®é€Ÿåº¦ + delay_ms
  * ------------------------------------------------------------------------- */
-void TIM4_PWM_Init(unsigned short arr,unsigned short psc);  /* µÈÍ¬ Motor_Init */
+void TIM4_PWM_Init(unsigned short arr,unsigned short psc);  /* ç­‰åŒ Motor_Init */
 void SetMotorSpeed(unsigned char ucChannel, signed char cSpeed);
 
-void ZYSTM32_run(signed char speed,int time);        /* Ç°½ø */
-void ZYSTM32_brake(int time);                        /* É²³µ/Í£³µ */
-void ZYSTM32_Left(signed char speed,int time);       /* ×ó×ª£¨×óÂÖÍ££© */
-void ZYSTM32_Spin_Left(signed char speed,int time);  /* Ô­µØ×óĞı */
-void ZYSTM32_Right(signed char speed,int time);      /* ÓÒ×ª£¨ÓÒÂÖÍ££© */
-void ZYSTM32_Spin_Right(signed char speed,int time); /* Ô­µØÓÒĞı */
-void ZYSTM32_back(signed char speed,int time);       /* ºóÍË */
+void ZYSTM32_run(signed char speed,int time);        /* å‰è¿› */
+void ZYSTM32_brake(int time);                        /* åˆ¹è½¦/åœè½¦ */
+void ZYSTM32_Left(signed char speed,int time);       /* å·¦è½¬ï¼ˆå·¦è½®åœï¼‰ */
+void ZYSTM32_Spin_Left(signed char speed,int time);  /* åŸåœ°å·¦æ—‹ */
+void ZYSTM32_Right(signed char speed,int time);      /* å³è½¬ï¼ˆå³è½®åœï¼‰ */
+void ZYSTM32_Spin_Right(signed char speed,int time); /* åŸåœ°å³æ—‹ */
+void ZYSTM32_back(signed char speed,int time);       /* åé€€ */
 
-/* ---------------- µç»úÒı½Å¶¨Òå£¨°åÔØ¹Ì¶¨£¬²»Òª¸Ä£© ---------------- */
-/*  ×óµç»ú·½Ïò  PB7  */
+/* ---------------- ç”µæœºå¼•è„šå®šä¹‰ï¼ˆæ¿è½½å›ºå®šï¼Œä¸è¦æ”¹ï¼‰ ---------------- */
+/*  å·¦ç”µæœºæ–¹å‘  PB7  */
 #define LEFT_MOTOR_GO             GPIO_Pin_7
 #define LEFT_MOTOR_GO_GPIO        GPIOB
 #define LEFT_MOTOR_GO_SET         GPIO_SetBits(LEFT_MOTOR_GO_GPIO,LEFT_MOTOR_GO)
 #define LEFT_MOTOR_GO_RESET       GPIO_ResetBits(LEFT_MOTOR_GO_GPIO,LEFT_MOTOR_GO)
 
-/*  ×óµç»ú PWM   PB9 ¡ú TIM4_CH4£¨ºêÃûÑØÓÃÀúÊ·Ğ´·¨£¬Êµ¼ÊÊÇ CH4/PB9£© */
+/*  å·¦ç”µæœº PWM   PB9 â†’ TIM4_CH4ï¼ˆå®åæ²¿ç”¨å†å²å†™æ³•ï¼Œå®é™…æ˜¯ CH4/PB9ï¼‰ */
 #define LEFT_MOTOR_PWM            GPIO_Pin_9
 #define LEFT_MOTOR_PWM_GPIO       GPIOB
 
-/*  ÓÒµç»ú·½Ïò  PA4  */
+/*  å³ç”µæœºæ–¹å‘  PA4  */
 #define RIGHT_MOTOR_GO            GPIO_Pin_4
 #define RIGHT_MOTOR_GPIO          GPIOA
 #define RIGHT_MOTOR_GO_SET        GPIO_SetBits(RIGHT_MOTOR_GPIO,RIGHT_MOTOR_GO)
 #define RIGHT_MOTOR_GO_RESET      GPIO_ResetBits(RIGHT_MOTOR_GPIO,RIGHT_MOTOR_GO)
 
-/*  ÓÒµç»ú PWM   PB8 ¡ú TIM4_CH3£¨ºêÃûÑØÓÃÀúÊ·Ğ´·¨£¬Êµ¼ÊÊÇ CH3/PB8£© */
+/*  å³ç”µæœº PWM   PB8 â†’ TIM4_CH3ï¼ˆå®åæ²¿ç”¨å†å²å†™æ³•ï¼Œå®é™…æ˜¯ CH3/PB8ï¼‰ */
 #define RIGHT_MOTOR_PWM           GPIO_Pin_8
 #define RIGHT_MOTOR_PWM_GPIO      GPIOB
 
