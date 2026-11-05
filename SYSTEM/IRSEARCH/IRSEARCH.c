@@ -234,7 +234,17 @@ static u8 gray_iface_config(void)
 
 static u8 gray_iface_read(u8 *values8)
 {
-    return gray_i2c_read_reg(GW_GRAY_ANALOG_MODE, values8, 8);
+    if (!gray_i2c_read_reg(GW_GRAY_ANALOG_MODE, values8, 8)) return 0;
+
+#if GRAY_ANALOG_INVERT
+    /* 本车模块：黑线输出大、白底输出小 → 反相成"白≈255 / 黑≈0"的统一约定 */
+    {
+        u8 i;
+        for (i = 0; i < 8; i++) values8[i] = (u8)(255 - values8[i]);
+    }
+#endif
+
+    return 1;
 }
 
 /* ==========================================================================
