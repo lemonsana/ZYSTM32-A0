@@ -118,20 +118,20 @@
  * ============================================================================ */
 #define GRAY_LOOKAHEAD_CM      12   /* 灰度板到电机驱动轴的距离（仅说明/换算用） */
 
-#define GRAY_BASE_SPEED        32   /* 直行基础速度 */
-#define GRAY_STEER_GAIN        32   /* P：小误差增益 */
-#define GRAY_STEER_GAIN_FAR    50   /* P：大误差（急弯）增益 */
-#define GRAY_FAR_THRESHOLD     40   /* |误差| 超过它切换到 FAR 增益 */
+#define GRAY_BASE_SPEED        45   /* 直行基础速度 */
+#define GRAY_STEER_GAIN        40   /* P：小误差增益 */
+#define GRAY_STEER_GAIN_FAR    60   /* P：大误差（急弯）增益 */
+#define GRAY_FAR_THRESHOLD     30   /* |误差| 超过它切换到 FAR 增益 */
 #define GRAY_KI                 0   /* I：积分增益（前视 12cm 建议 0） */
 #define GRAY_KD                12   /* D：微分增益 */
 #define GRAY_I_LIMIT         2500   /* 积分上限（误差·毫秒） */
 #define GRAY_BLACK_CUTOFF     180   /* 低于此值算黑线（白≈255 黑≈0） */
-#define GRAY_CENTER_DEADBAND    4   /* 误差死区 */
+#define GRAY_CENTER_DEADBAND    2   /* 误差死区 */
 #define GRAY_CHANNEL_MIRROR     0   /* 1 = 镜像探头顺序（方向反了改这个） */
 
 #define GRAY_SLOW_GAIN         20   /* 速度调度：按 |误差| 降速 */
 #define GRAY_SLOW_D_GAIN       40   /* 速度调度：按 |误差变化| 降速（进弯预减速） */
-#define GRAY_MIN_SPEED         18   /* 降速下限 */
+#define GRAY_MIN_SPEED         25   /* 降速下限 */
 #define GRAY_INNER_REVERSE     45   /* 内轮允许反转的最大幅度 */
 
 #define GRAY_LOST_SPIN_SPEED   50   /* 丢线找线速度 */
