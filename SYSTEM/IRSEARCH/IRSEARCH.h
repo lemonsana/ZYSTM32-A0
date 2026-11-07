@@ -133,7 +133,7 @@
  * ============================================================================ */
 #define GRAY_LOOKAHEAD_CM      12   /* 灰度板到电机驱动轴的距离（仅说明/换算用） */
 
-#define GRAY_BASE_SPEED        45   /* 直行基础速度 */
+#define GRAY_BASE_SPEED        60   /* 直行基础速度（先在 60 跑顺，再试 70/80，最高 95） */
 #define GRAY_STEER_GAIN        40   /* P：小误差增益 */
 #define GRAY_STEER_GAIN_FAR    60   /* P：大误差（急弯）增益 */
 #define GRAY_FAR_THRESHOLD     30   /* |误差| 超过它切换到 FAR 增益 */
@@ -149,13 +149,36 @@
 #define GRAY_MIN_SPEED         25   /* 降速下限 */
 #define GRAY_INNER_REVERSE     45   /* 内轮允许反转的最大幅度 */
 
+/* ============================================================================
+ *  转向量归一化 + 速度补偿（R2.1，高速过弯）
+ *  ----------------------------------------------------------------------------
+ *  问题：黑线实际只有 3~4 路宽。线压在阵列边缘时，加权重心只能算出 55~70
+ *        的误差（8 路全黑才是 0，单路贴边才是 100）。原来按 100 归一化，
+ *        "线已经到头"也只输出一半多一点的转向量 —— 60 速以上内侧轮压不到 0，
+ *        车被推着往外走，最后冲出黑线。
+ *
+ *  做法：把 P/I/D 合出来的 correction 再乘一个系数
+ *            k = (100 / FULL) × (base / REF)
+ *        ① 100/FULL：把"线到边缘(55~70)"放大成接近满舵；
+ *        ② base/REF：转同样半径所需的左右差速与车速成正比 —— 高速多打、低速少打。
+ *        两项合起来，正好让"误差到 FULL 时内侧轮刚好停转"，且与车速无关。
+ *
+ *  调参：
+ *      GRAY_STEER_FULL_ERROR  50 → 更早满舵（更凶）；65 → 更温和
+ *      GRAY_STEER_REF_SPEED   调大 = 同样车速下补偿变小（整体更柔）
+ *      GRAY_STEER_GAIN_MAX    补偿上限；**设成 100 就完全关掉补偿、退回老行为**
+ * ============================================================================ */
+#define GRAY_STEER_FULL_ERROR   55   /* |误差| 到这里算"满舵"（≈4 路宽的黑线压到边缘） */
+#define GRAY_STEER_REF_SPEED    60   /* 标定速度：base=60 时倍率为 1.0 */
+#define GRAY_STEER_GAIN_MAX    300   /* 总倍率上限(%)：300 = 最多放大到 3 倍 */
+
 #define GRAY_LOST_SPIN_SPEED   50   /* 丢线找线速度 */
 #define GRAY_LOST_STOP_MS    3000
 #define GRAY_FRAME_MS          10
 
 /* 调试接口 */
 void IRSearchInit(void);            /* 初始化传感器 */
-void SearchRun(void);               /* 循迹任务：主循环每 TICK_MS 调一次 */
+void SearchRun(void);               /* 循迹任务：由 app_mode 的 10ms 任务调用（MODE_TASK_MS） */
 
 u8   Gray_IsReady(void);            /* 1 = 传感器已就绪 */
 int  Gray_GetError(void);           /* 最近一次线位置误差 -100~+100，999=丢线 */

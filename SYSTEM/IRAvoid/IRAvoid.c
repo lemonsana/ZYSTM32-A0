@@ -56,10 +56,12 @@ static u8  av_dist       = 0;      /* 前方距离 */
 static u8  av_dist_l     = 0;      /* 左侧距离 */
 static u8  av_dist_r     = 0;      /* 右侧距离 */
 static u8  av_turn_left  = 1;      /* 本次往左转? */
+#if AVOID_SCAN_WHILE_DRIVING
 static u8  av_sweep_dir  = 1;      /* 边走边扫：舵机扫描方向 +1/-1 */
 static u8  av_best_angle = AV_SERVO_CENTER;  /* 边走边扫：最空的角度 */
 static u8  av_best_dist  = 0;
 static u8  av_phase      = 0;      /* 边走边扫：0=转舵机 1=测距 */
+#endif
 
 /* ==========================================================================
  *  超声波驱动
@@ -249,9 +251,11 @@ void IRAvoidInit(void)
     av_tick_cnt   = 0;
     av_dist       = 0;
     av_turn_left  = 1;
+#if AVOID_SCAN_WHILE_DRIVING
     av_sweep_dir  = 1;
     av_best_angle = AV_SERVO_CENTER;
     av_best_dist  = 0;
+#endif
 
     Servo_SetAngle(AV_SERVO_CENTER);
     delay_ms(300);              /* 等舵机归中 */

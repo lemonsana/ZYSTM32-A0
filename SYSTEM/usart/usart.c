@@ -132,3 +132,48 @@ void USART1_IRQHandler(void)                	//串口1中断服务程序
 } 
 #endif	
 
+
+/* ============================================================================
+ *  取出一整行指令（给 app_mode.c 的串口模式切换用）
+ *  ----------------------------------------------------------------------------
+ *  结束条件二选一：
+ *    1) 收到 \r\n，USART_RX_STA 的 bit15 已置位；
+ *    2) 缓冲区最后一个字节是 \n —— 兼容只发 \n 的串口工具（那种 \n 会被
+ *       当成普通数据存进缓冲）。
+ *  取出后清空接收状态，返回 1；没有完整行返回 0。
+ * ========================================================================== */
+#if EN_USART1_RX
+u8 uart_take_line(char *buf, u16 max_len)
+{
+    u16 len;
+    u16 i;
+
+    if (buf == 0 || max_len == 0) return 0;
+
+    len = (u16)(USART_RX_STA & 0x3FFF);
+    if (len == 0) return 0;
+
+    if ((USART_RX_STA & 0x8000) == 0)
+    {
+        if (USART_RX_BUF[len - 1] != '\n' && USART_RX_BUF[len - 1] != '\r')
+        {
+            return 0;
+        }
+    }
+
+    if (len >= max_len) len = (u16)(max_len - 1);
+
+    for (i = 0; i < len; i++) buf[i] = (char)USART_RX_BUF[i];
+    buf[len] = '\0';
+
+    USART_RX_STA = 0;
+    return 1;
+}
+#else
+u8 uart_take_line(char *buf, u16 max_len)
+{
+    (void)buf;
+    (void)max_len;
+    return 0;
+}
+#endif

@@ -3,7 +3,7 @@
 湖南智宇电子 ZYSTM32-A0 智能机器人主板（STM32F103RCT6）综合程序：**黑线循迹 / 超声波避障 / 综合模式**，
 板载 PC2 按键循环切换模式。
 
-> 版本演进：`v1.0` 原厂 → `v2.x` 试错 → `v3.0~v3.6` 重构（循迹跑通、PID、超声波避障、融合模式）→ **`R1` 灰度极性修复（正式版）→ `R1.1` 关闭蜂鸣器（当前）**
+> 版本演进：`v1.0` 原厂 → `v2.x` 试错 → `v3.0~v3.6` 重构（循迹跑通、PID、超声波避障、融合模式）→ `R1` 灰度极性修复 → `R1.1` 关闭蜂鸣器 → **`V5` 5ms 调度 + 模式表 + 高速过弯（当前）**
 
 ---
 
@@ -71,10 +71,13 @@ v3.0 = 可循迹版本的循迹算法 + v2.0 的非阻塞电机层 / 不停车�
 | 宏 | 默认 | 作用 |
 |---|---|---|
 | `GRAY_LOOKAHEAD_CM` | 12 | 灰度板到电机驱动轴的距离（仅说明/换算用） |
-| `GRAY_BASE_SPEED` | 32 | 直行速度 |
-| `GRAY_STEER_GAIN` | 32 | **P**：小误差时的转向量（满偏 ±100 → ±32） |
-| `GRAY_STEER_GAIN_FAR` | 50 | **P（急弯）**：`|误差| > GRAY_FAR_THRESHOLD` 时改用这个，更硬 |
-| `GRAY_FAR_THRESHOLD` | 40 | 切换到急弯增益的阈值 |
+| `GRAY_BASE_SPEED` | 60 | 直行速度（先 60 跑顺，再 70/80，最高 95） |
+| `GRAY_STEER_GAIN` | 40 | **P**：小误差增益（满偏 ±100 → ±40） |
+| `GRAY_STEER_GAIN_FAR` | 60 | **P（急弯）**：|误差| 超过阈值后的增益，中间线性过渡 |
+| `GRAY_FAR_THRESHOLD` | 30 | 增益过渡的拐点 |
+| `GRAY_STEER_FULL_ERROR` | 55 | **满舵误差**：|e| 到这里就算打满（3~4 路宽的黑线压到边缘 ≈ 55~70） |
+| `GRAY_STEER_REF_SPEED` | 60 | **速度补偿基准**：base=60 时倍率 1.0，高速自动多打 |
+| `GRAY_STEER_GAIN_MAX` | 300 | 补偿倍率上限（%），防 95 速时过猛 |
 | `GRAY_SLOW_GAIN` | 20 | **速度调度**：base − |误差|×20/100 |
 | `GRAY_SLOW_D_GAIN` | 40 | **进弯预减速**：base − |误差变化量|×40/100 |
 | `GRAY_MIN_SPEED` | 18 | 减速后的最低基础速度 |
@@ -87,7 +90,7 @@ v3.0 = 可循迹版本的循迹算法 + v2.0 的非阻塞电机层 / 不停车�
 | `GRAY_CHANNEL_MIRROR` | 0 | 车往反方向修正时改 1 |
 | `GRAY_LOST_SPIN_SPEED` | 50 | 丢线原地找线速度 |
 | `GRAY_LOST_STOP_MS` | 3000 | 丢线多久后停车（发夹弯要留足找回时间） |
-| `GRAY_FRAME_MS` | 10 | 必须与 `main.c` 的 `TICK_MS` 一致 |
+| `GRAY_FRAME_MS` | 10 | 必须与 `app_mode.h` 的 `MODE_TASK_MS` 一致 |
 
 ## ⚠️ 12cm 前视距离的几何限制（为什么发夹弯跟不住）
 
@@ -130,7 +133,7 @@ mode=1 L=  32 R=  32 | err=   0 corr=   0 spd= 32 ready=1 avoid=1
 
 - `ready=0` → 灰度模块没通：先查 **PULL 跳线**、SCL/SDA 是否接反、5V 供电
 - `err`：0 居中、负数偏左、正数偏右、`999` 丢线
-- `corr`：PID 输出，顶到 ±50 说明在满舵过弯
+- `corr`：转向量（已含"归一化 × 速度补偿"）；`|corr|` 接近 `spd` 时说明内侧轮已被压到 0（满舵过弯）
 - `spd`：速度调度后的基础速度，掉到 18 说明已减速到底
 - 手拿车把某个探头压在黑线上，`err` 应有明显正负跳变 → 验证通道顺序
 
@@ -155,6 +158,7 @@ Keil MDK 打开 `USER/Template.uvprojx` → 编译 → ST-Link/J-Link 下载。
 | **v3.6** | 模式1 合并为「循迹 + 避障」综合：循迹 → 前方 <35cm → 停车扫左右 → 绕行 → 原地反向找线 → 回到循迹；模式2 保留纯避障；串口新增 `fus` |
 | **R1** ⭐ | **灰度极性修复（Rational Version 1 正式版）**：本车 8 路灰度模块实测「黑≈255、白≈0」（指示灯暗 = 黑线），原来的 `weight = 180 − v` 把白底当成线，车越跑越偏。新增 `GRAY_ANALOG_INVERT = 1`，在 I2C 读数出口统一做 `255 − v`，权重 / 丢线判据 / 融合模式 `Gray_IsOnLine()` 全部回到「白≈255、黑≈0」，循迹改回跟黑线走。基线（功能冻结）：<br>① 模式1 综合（循迹+避障+绕后找线）、模式2 纯避障、模式3 纯循迹；<br>② 循迹：8 路灰度归一化模拟量 + 加权重心 + 一阶滤波 + PID（**现场调参：BASE 45 / P 40、FAR 60/阈值 30 / D 12 / I 0 / 死区 2 / MIN 25**）+ 速度/增益调度；<br>③ 避障：HC-SR04（PC0/PC1）+ 舵机（PB0/TIM3_CH3）180° 扫描，停车扫描版；<br>④ 电机非阻塞 `Motor_SetSpeed`，10ms 主循环；<br>⑤ 串口 115200 调试字段：`err/corr/spd/st/dist/ang/fus`；<br>⑥ 源码统一 UTF-8(BOM)，Keil 中文注释正常显示 |
 | **R1.1** | **关闭蜂鸣器**：`BEEP_ENABLE = 0`，`BEEP_SET` / `BEEP_RESET` 展开为空操作，PC3 保持低电平 —— 避障扫描、找线时不再鸣叫（要恢复把宏改回 1 重新编译）。模式3 仍为纯循迹（遥控程序保留但不占用模式键）。 |
+| **V5** ⭐ | **调度重构 + 高速过弯**（实现上分两步：R2.0 架构、R2.1 转向）：<br>① 主循环从 `while(1){…; delay_ms(10);}` 换成 **TIM6 5ms 硬件节拍 + 任务表调度**（`SYSTEM/sched/`），控制周期不再被避障测距(≤30ms)、串口打印(≈9ms)带偏，`GRAY_FRAME_MS=10` 从此名副其实；<br>② 三个模式改为**模式表**（`SYSTEM/app/`），加模式 = 加一行；新增**串口整行指令**（发 `1`/`2`/`3` 切模式）、上电 500ms 屏蔽、`[sched] loop/max` 调试行；<br>③ 循迹**转向量归一化 + 速度补偿**：3~4 路宽的黑线压到阵列边缘误差只有 55~70，按 `GRAY_STEER_FULL_ERROR=55` 归一化后才等于满舵，再乘 `base/GRAY_STEER_REF_SPEED` 随车速放大 —— 60~95 速下内侧轮能压到 0，不再冲出弯道；<br>④ `GRAY_BASE_SPEED` 45→60，增益调度由台阶改为线性过渡，`GRAY_STEER_GAIN_MAX` 设 100 可一键退回老行为。 |
 
 ## 工作模式（R1.1）
 
@@ -172,7 +176,7 @@ Keil MDK 打开 `USER/Template.uvprojx` → 编译 → ST-Link/J-Link 下载。
     → 找到线（Gray_IsOnLine）→ 冷静 400ms → 回到循迹
 ```
 
-| 参数（`USER/main.c` 顶部） | 默认 | 作用 |
+| 参数（`SYSTEM/app/app_mode.h`） | 默认 | 作用 |
 |---|---:|---|
 | `FUS_TRIGGER_CM` | 35 | 前方小于它触发避让 |
 | `FUS_MIN_GAP_CM` | 20 | 两侧都小于它 → 原地掉头 |
@@ -209,4 +213,6 @@ Keil MDK 打开 `USER/Template.uvprojx` → 编译 → ST-Link/J-Link 下载。
 - `SYSTEM/IRAvoid/` — 避障（不停车弧线绕行）
 - `SYSTEM/motor/` — 电机（非阻塞 `Motor_SetSpeed` + 原厂兼容接口）
 - `SYSTEM/remote/` — 红外 NEC 解码
+- `SYSTEM/sched/` — **5ms 节拍调度内核**（TIM6，任务表 + 前后台）
+- `SYSTEM/app/` — **模式表** + 三个模式的 start/update/stop
 - `可循迹版本/`、`docs/` — 参考版本与设计文档（不参与编译）

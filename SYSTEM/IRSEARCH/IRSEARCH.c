@@ -33,7 +33,9 @@ static u16    gray_lost_ms = 0;
 static int16_t gray_last_raw_error = 0;   /* 最近一次原始误差（调试用） */
 
 /* ---- v3.1 PID 状态 ---- */
-static int32_t gray_i_sum      = 0;       /* 积分累加，单位：误差·毫秒 */
+#if GRAY_KI > 0
+static int32_t gray_i_sum      = 0;       /* 积分累加，单位：误差·毫秒（GRAY_KI=0 时不编译） */
+#endif
 static int16_t gray_prev_error = 0;       /* 上一帧误差（D 项用） */
 static int16_t gray_correction = 0;       /* 最近一次 PID 输出（调试用） */
 static int16_t gray_base_speed = 0;       /* 最近一次调度后的基础速度（调试用） */
@@ -405,7 +407,9 @@ void SearchRun(void)
 
     if (!gray_ready)
     {
+#if GRAY_KI > 0
         gray_i_sum = 0;
+#endif
         Motor_Stop();
         return;
     }
@@ -414,7 +418,9 @@ void SearchRun(void)
 
     if (result == 0)                    /* I2C 读失败：停车等下一帧 */
     {
+#if GRAY_KI > 0
         gray_i_sum = 0;
+#endif
         Motor_Stop();
         return;
     }
@@ -423,7 +429,9 @@ void SearchRun(void)
     {
         gray_filter_ready = 0;
         gray_last_raw_error = 999;
+#if GRAY_KI > 0
         gray_i_sum = 0;                 /* 丢线时清积分，防止恢复后猛冲 */
+#endif
 
         if (gray_lost_ms < GRAY_LOST_STOP_MS) gray_lost_ms += GRAY_FRAME_MS;
 
@@ -485,8 +493,18 @@ void SearchRun(void)
     if (base_speed < GRAY_MIN_SPEED) base_speed = GRAY_MIN_SPEED;
     gray_base_speed = base_speed;
 
-    /* 增益调度 */
-    gain = (abs_e > GRAY_FAR_THRESHOLD) ? GRAY_STEER_GAIN_FAR : GRAY_STEER_GAIN;
+    /* 增益调度：小误差用 GAIN，大误差用 GAIN_FAR；
+     * 0 ~ FAR_THRESHOLD 之间线性过渡，避免越过阈值时转向量台阶跳变 */
+    if (abs_e >= GRAY_FAR_THRESHOLD)
+    {
+        gain = GRAY_STEER_GAIN_FAR;
+    }
+    else
+    {
+        gain = (int16_t)(GRAY_STEER_GAIN
+             + ((int32_t)(GRAY_STEER_GAIN_FAR - GRAY_STEER_GAIN) * abs_e)
+               / GRAY_FAR_THRESHOLD);
+    }
 
     p_term = (int16_t)((int32_t)error * gain / 100L);
 
@@ -514,6 +532,21 @@ void SearchRun(void)
 #endif
 
     correction = p_term + i_term + d_term;
+
+    /* ---- 转向量归一化 + 速度补偿（R2.1）----
+     * k = (100/FULL) × (base/REF)
+     *   100/FULL：3~4 路宽的黑线到阵列边缘只有 55~70 的误差，按 55 归一化后
+     *             "线到头"才真正等于满舵；
+     *   base/REF：差速需求 ∝ 车速，60 速为 1.0 倍。
+     * 两者相乘的结果：|误差| 到 FULL 时，内侧轮刚好被压到 0（与车速无关）。 */
+    {
+        int32_t k = ((int32_t)base_speed * 100L / GRAY_STEER_REF_SPEED)
+                  * 100L / GRAY_STEER_FULL_ERROR;
+
+        if (k > GRAY_STEER_GAIN_MAX) k = GRAY_STEER_GAIN_MAX;
+        correction = (int16_t)((int32_t)correction * k / 100L);
+    }
+
     gray_correction = correction;
     gray_prev_error = error;
 
@@ -538,7 +571,9 @@ int Gray_GetBaseSpeed(void) { return gray_base_speed; }
 /* 清积分：切模式、重新上路、手动复位时调用 */
 void Gray_ResetIntegral(void)
 {
+#if GRAY_KI > 0
     gray_i_sum      = 0;
+#endif
     gray_prev_error = 0;
     gray_filter_ready = 0;
     gray_lost_ms    = 0;

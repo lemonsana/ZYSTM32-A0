@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -574,6 +574,16 @@
               <FileName>remote.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\SYSTEM\remote\remote.c</FilePath>
+            </File>
+            <File>
+              <FileName>sched.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\sched\sched.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_mode.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\app\app_mode.c</FilePath>
             </File>
           </Files>
         </Group>
