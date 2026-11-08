@@ -18,7 +18,7 @@
           <Vendor>STMicroelectronics</Vendor>
           <PackID>Keil.STM32F1xx_DFP.2.2.0</PackID>
           <PackURL>http://www.keil.com/pack/</PackURL>
-          <Cpu>IROM(0x08000000,0x40000) IRAM(0x20000000,0xC000) CPUTYPE("Cortex-M3") CLOCK(72000000) ELITTLE</Cpu>
+          <Cpu>IROM(0x08000000,0x3F800) IRAM(0x20000000,0xC000) CPUTYPE("Cortex-M3") CLOCK(72000000) ELITTLE</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
           <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0STM32F10x_512 -FS08000000 -FL040000 -FP0($$Device:STM32F103RC$Flash\STM32F10x_512.FLM))</FlashDriverDll>
@@ -249,7 +249,7 @@
               <IROM>
                 <Type>1</Type>
                 <StartAddress>0x8000000</StartAddress>
-                <Size>0x40000</Size>
+                <Size>0x3F800</Size>
               </IROM>
               <XRAM>
                 <Type>0</Type>
@@ -274,7 +274,7 @@
               <OCR_RVCT4>
                 <Type>1</Type>
                 <StartAddress>0x8000000</StartAddress>
-                <Size>0x40000</Size>
+                <Size>0x3F800</Size>
               </OCR_RVCT4>
               <OCR_RVCT5>
                 <Type>1</Type>
@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app;..\SYSTEM\cfg;..\SYSTEM\selftest</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -584,6 +584,16 @@
               <FileName>app_mode.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\SYSTEM\app\app_mode.c</FilePath>
+            </File>
+            <File>
+              <FileName>cfg.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\cfg\cfg.c</FilePath>
+            </File>
+            <File>
+              <FileName>selftest.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\selftest\selftest.c</FilePath>
             </File>
           </Files>
         </Group>

@@ -8,6 +8,7 @@
 #include "usart.h"
 #include "sched.h"
 #include "app_mode.h"
+#include "cfg.h"
 
 #include <stdio.h>
 
@@ -27,9 +28,18 @@
  *         再按 base/60 跟着车速放大 —— 60~95 速下内侧轮能压到 0，不再冲出弯道。
  *
  *  避障 / 电机 / 灰度取样 的参数与算法保持 R1.1。
+ *
+ *  V6 相对 V5 的改动（融合 TC387 智能车工程里验证过的做法）：
+ *      1. 灰度加"覆盖度"判别（几路压线）：8 路全黑时加权重心恰好是 0，
+ *         和正常压 2cm 线无法区分 —— 现在单独识别成 EV_WIDE（十字/横带/
+ *         停车线），走"锁 0 直行"分支，不再靠误差恰好对称蒙过去；
+ *      2. 一帧拆成四层：采样 → 事件 → 决策 → 控制（IRSEARCH.c）；
+ *      3. 基础速度加加速斜坡（只作用在 base 上，差速修正不打折）；
+ *      4. 16 个循迹参数搬到运行期（SYSTEM/cfg），串口 SET/SAVE 存内部 Flash；
+ *      5. 新增模式 4「自检」：灰度/电机/舵机/超声波/按键/遥控/参数逐项点名。
  * ========================================================================== */
 
-#define FIRMWARE_VER    "V5"
+#define FIRMWARE_VER    "V6"
 
 int main(void)
 {
@@ -48,6 +58,8 @@ int main(void)
            Gray_IsReady(),
            Gray_IsReady() ? "(ok)" : "(FAIL: 查 PULL 跳线 / SCL-SDA / 5V)");
 #endif
+
+    Cfg_Init();                 /* 参数：读 Flash，失败(空白/CRC 错)就用默认值 */
 
     Sched_Init();                                       /* TIM6 5ms，先不启动 */
 

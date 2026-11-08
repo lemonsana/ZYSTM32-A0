@@ -6,6 +6,8 @@
 #include "remote.h"
 #include "IRSEARCH.h"
 #include "IRAvoid.h"
+#include "cfg.h"
+#include "selftest.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -63,6 +65,7 @@ static const app_mode_desc_t g_modes[] =
     { '1', "T1 循迹+避障", mode1_start, mode1_update, mode1_stop },
     { '2', "T2 纯避障",    mode2_start, mode2_update, mode2_stop },
     { '3', "T3 纯循迹",    mode3_start, mode3_update, mode3_stop },
+    { '4', "T4 自检",      SelfTest_Start, SelfTest_Update, SelfTest_Stop },
 };
 
 #define APP_MODE_COUNT  ((u8)(sizeof(g_modes) / sizeof(g_modes[0])))
@@ -397,25 +400,48 @@ void app_mode_key_task(void)
     if (!KEY) keypre = 0;
 }
 
-/* 串口整行指令：找到表里匹配的字符就切模式，最后一个生效 */
+/* 串口整行指令（V6 重写）
+ * ----------------------------------------------------------------------------
+ * 老写法是"整行扫一遍，找到表里的模式字符就切"，这样有个坑：
+ *      "SET KD 12" 里同时含 '1' 和 '2'，一条调参命令会被当成切模式。
+ *
+ * 现在分两步：
+ *      1) 先交给 cfg 解析（? / SET / SAVE / LOAD / DEF / 直接 "BASE 55"）
+ *      2) 剩下的一行必须"只有 1 个字符"才当模式切换
+ */
 static void app_mode_poll_uart(void)
 {
-    char line[32];
-    char cmd = 0;
-    u8   i, len;
+    char line[40];
+    char cmdline[40];
+    u8   len;
+    u8   i;
+    u8   j;
 
     if (!uart_take_line(line, sizeof(line))) return;
 
+    /* 去掉首尾空白和 \r\n */
     len = (u8)strlen(line);
-    for (i = 0; i < len; i++)
+    i = 0;
+    while (i < len && (line[i] == ' ' || line[i] == '\t')) i++;
+    while (len > i && (line[len - 1] == '\r' || line[len - 1] == '\n' ||
+                       line[len - 1] == ' '  || line[len - 1] == '\t'))
     {
-        if (app_mode_index_of_char(line[i]) >= 0) cmd = line[i];
+        len--;
     }
+    if (i >= len) return;
 
-    if (cmd != 0)
+    j = 0;
+    while (i < len && j < (u8)(sizeof(cmdline) - 1)) cmdline[j++] = line[i++];
+    cmdline[j] = '\0';
+
+    if (Cfg_HandleLine(cmdline)) return;        /* 调参命令优先 */
+
+    if (j == 1 && app_mode_index_of_char(cmdline[0]) >= 0)
     {
-        printf("T%c\r\n", cmd);
-        app_mode_start_by_char(cmd);
+#if DEBUG_UART
+        printf("T%c\r\n", cmdline[0]);
+#endif
+        app_mode_start_by_char(cmdline[0]);
     }
 }
 
@@ -451,13 +477,16 @@ void app_mode_debug_task(void)
 #if DEBUG_UART
     static u8 cnt = 0;
 
-    printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ready=%d st=%d dist=%3d ang=%3d fus=%d\r\n",
+    printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ev=%-4s act=%d cc=%d | ready=%d st=%d dist=%3d ang=%3d fus=%d\r\n",
            (g_active == APP_MODE_NONE) ? 0 : (int)(g_active + 1),
            Motor_GetLeft(),
            Motor_GetRight(),
            Gray_GetError(),
            Gray_GetCorrection(),
            Gray_GetBaseSpeed(),
+           Gray_EventName(Gray_GetEvent()),
+           Gray_GetActive(),
+           Gray_GetCrossCount(),
            Gray_IsReady(),
            AVoid_GetState(),
            AVoid_GetDistance(),

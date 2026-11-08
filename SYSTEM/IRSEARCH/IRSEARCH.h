@@ -176,6 +176,53 @@
 #define GRAY_LOST_STOP_MS    3000
 #define GRAY_FRAME_MS          10
 
+/* ============================================================================
+ *  V6 新增：加速斜坡 / 覆盖度（线宽）判别 / 事件确认
+ *  ----------------------------------------------------------------------------
+ *  【加速斜坡】GRAY_RAMP_ALPHA
+ *      只作用在"基础速度"上，不碰差速修正量：
+ *          base_ramp += (base_target - base_ramp) × ALPHA / 1000   （每 10ms 一次）
+ *      所以急弯里内轮该反转还是立刻反转，不会因为斜坡而转不动；
+ *      但模式切换、找回线之后车是"缓加速"而不是阶跃，轮胎不打滑、不甩尾。
+ *      ALPHA 越大越接近阶跃：120 ≈ 80ms 时间常数；300 ≈ 30ms；1000 = 关闭斜坡。
+ *
+ *  【覆盖度判别】GRAY_WIDE_MIN_ACTIVE
+ *      加权重心对称（权重 ±7±5±3±1），所以 8 路全黑时 error 恒等于 0，和"正常
+ *      压在 2cm 黑线上"完全无法区分。这里改用"几路压线"来区分：
+ *          正常 2cm 黑线 → 2~4 路
+ *          十字 / 宽黑带 / 停车线 → 5 路以上，通常 7~8 路
+ *      压线数 >= WIDE_MIN_ACTIVE 就判 EV_WIDE。设成 9 等于关闭该功能。
+ *
+ *  【事件确认】WIDE_CONFIRM / LOST_CONFIRM
+ *      连续 N 帧都满足才切换事件（去抖/滞回）。N=1 表示不确认。
+ *
+ *  【宽黑停车】GRAY_WIDE_STOP_MS
+ *      EV_WIDE 持续超过这么久 → 停车（终点黑区 / 停车线用）。0 = 不停车，只计数。
+ * ========================================================================== */
+#define GRAY_RAMP_ALPHA         120   /* 斜坡系数 /1000，1000 = 关闭 */
+#define GRAY_WIDE_MIN_ACTIVE      7   /* 几路压线算"宽黑"，9 = 关闭 */
+#define GRAY_WIDE_CONFIRM         3   /* 宽黑连续多少帧确认 */
+#define GRAY_LOST_CONFIRM         3   /* 丢线连续多少帧确认 */
+#define GRAY_WIDE_STOP_MS         0   /* 宽黑持续多久停车(ms)，0 = 不停车 */
+
+/* ============================================================================
+ *  事件枚举（V6）
+ *  ----------------------------------------------------------------------------
+ *  把"看到什么"和"怎么打方向"分开：
+ *      采样层   gray_read_frame()  → error(位置) + active(几路压线)
+ *      事件层   gray_update_event()→ LINE / WIDE / LOST（带去抖）
+ *      决策层   SearchRun() 里 switch(event) —— 决定这一帧"走不走 PID"
+ *      控制层   PID + 斜坡 + 输出
+ *  这样十字、停车线、丢线都成了"明确的事件"，而不是靠一堆 if 藏在 PID 里。
+ * ========================================================================== */
+typedef enum
+{
+    GRAY_EV_NONE = 0,       /* 还没采样 */
+    GRAY_EV_LINE,           /* 正常压线（2~4 路） */
+    GRAY_EV_WIDE,           /* 宽黑：十字 / 横黑带 / 停车线（>=WIDE_MIN_ACTIVE 路） */
+    GRAY_EV_LOST            /* 丢线：一路都没压到 */
+} gray_event_t;
+
 /* 调试接口 */
 void IRSearchInit(void);            /* 初始化传感器 */
 void SearchRun(void);               /* 循迹任务：由 app_mode 的 10ms 任务调用（MODE_TASK_MS） */
@@ -187,5 +234,13 @@ int  Gray_GetBaseSpeed(void);       /* 最近一次调度后的基础速度 */
 void Gray_ResetIntegral(void);      /* 清积分（切模式、重新上路时调用） */
 u8   Gray_IsOnLine(void);           /* 1 = 当前至少有一路探头压到黑线（融合模式找线用） */
 u8   Gray_ReadRaw(u8 *values8);     /* 读原始 8 路数据，返回 1=成功 */
+
+/* ---- V6 新增调试接口（串口 / 自检模式用） ---- */
+u8   Gray_GetActive(void);          /* 最近一帧有几路压线 0~8（覆盖度） */
+u8   Gray_GetEvent(void);           /* 最近一次事件（gray_event_t） */
+u16  Gray_GetCrossCount(void);      /* 上电以来"正常→宽黑"的次数（十字/横线计数） */
+void Gray_ResetCrossCount(void);
+void Gray_ResetRamp(void);          /* 清零速度斜坡（重新起步用） */
+const char *Gray_EventName(u8 ev);  /* 事件名，打印用 */
 
 #endif
