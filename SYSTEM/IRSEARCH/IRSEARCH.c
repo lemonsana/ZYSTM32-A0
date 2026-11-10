@@ -2,6 +2,7 @@
 #include "delay.h"
 #include "motor.h"
 #include "cfg.h"
+#include "imu.h"
 #include "stm32f10x.h"
 
 /* ============================================================================
@@ -63,6 +64,12 @@ static int32_t gray_i_sum      = 0;       /* 积分累加，单位：误差·毫
 static int16_t gray_prev_error = 0;       /* 上一帧误差（D 项用） */
 static int16_t gray_correction = 0;       /* 最近一次 PID 输出（调试用） */
 static int16_t gray_base_speed = 0;       /* 最近一次输出用的基础速度（调试用） */
+
+/* ---- V7：十字直行 / 保护直行 ---- */
+static u8      gray_prev_event    = GRAY_EV_NONE;
+static u8      gray_yaw_hold_valid = 0;
+static float   gray_yaw_hold      = 0.0f;
+static u16     gray_coast_ms      = 0;
 
 /* 探头位置权重：下标 0 = 通道1（最左）…… 下标 7 = 通道8（最右）
  * 与"可循迹版本"一致；若实车方向相反，把 GRAY_CHANNEL_MIRROR 改成 1 */
@@ -496,6 +503,66 @@ static u8 gray_update_event(const gray_frame_t *f)
     return ev;
 }
 
+/* ---------------------------------------------------------------- 十字直行
+ *  进宽黑时锁存一次 yaw，之后用 (当前 yaw - 锁存 yaw) 算航向修正。
+ *  没有陀螺时 gray_yaw_hold_valid = 0，修正恒为 0，退化成"锁 0 直行"（V6 行为）。
+ */
+static void gray_hold_latch(void)
+{
+    if (Imu_IsReady())
+    {
+        gray_yaw_hold       = Imu_GetYaw();
+        gray_yaw_hold_valid = 1;
+    }
+    else
+    {
+        gray_yaw_hold_valid = 0;
+    }
+}
+
+static int16_t gray_heading_correction(void)
+{
+    int16_t kp;
+    int16_t dead;
+    float   dyaw;
+    int32_t d10;
+    int32_t corr;
+
+    if (!gray_yaw_hold_valid) return 0;
+
+    kp   = Cfg_Get(CFG_CROSS_KP);
+    dead = Cfg_Get(CFG_CROSS_DEAD);
+    if (kp <= 0) return 0;
+
+    dyaw = Imu_GetYaw() - gray_yaw_hold;
+    if (dyaw >  3276.0f) dyaw =  3276.0f;      /* 防强转溢出 */
+    if (dyaw < -3276.0f) dyaw = -3276.0f;
+
+    d10 = (int32_t)(dyaw * 10.0f);             /* 换成 0.1 度 */
+    if (d10 > -dead && d10 < dead) return 0;
+
+    corr = d10 * kp / 100;                     /* kp=30 → 每 0.1° 给 0.3 个单位 */
+    if (corr >  120) corr =  120;
+    if (corr < -120) corr = -120;
+
+    return (int16_t)corr;
+}
+
+/* 统一输出：base ± correction，带内轮反转限幅 */
+static void gray_output(int16_t base, int16_t correction)
+{
+    int16_t l   = (int16_t)(base + correction);
+    int16_t r   = (int16_t)(base - correction);
+    int16_t rev = Cfg_Get(CFG_INNER_REV);
+
+    if (l < -rev) l = (int16_t)(-rev);
+    if (l >  95)  l =  95;
+    if (r < -rev) r = (int16_t)(-rev);
+    if (r >  95)  r =  95;
+
+    Motor_SetSpeed(l, r);
+}
+
 /* ============================================================================
  *  循迹主任务（每 GRAY_FRAME_MS 调用一次）
  *  ----------------------------------------------------------------------------
@@ -523,8 +590,6 @@ void SearchRun(void)
     int16_t base_speed;
     int16_t gain;
     int16_t correction;
-    int16_t left_speed;
-    int16_t right_speed;
     int16_t p_term;
     int16_t i_term;
     int16_t d_term;
@@ -549,11 +614,41 @@ void SearchRun(void)
     gray_active = f.active;
     ev = gray_update_event(&f);
 
+    /* 宽黑 → 其他 的瞬间，给一段"继续直行"的保护时间：
+     * 十字中间的缝会让传感器一两帧看不到线，这时若走 EV_LOST 就会原地乱转。 */
+    if (gray_prev_event == GRAY_EV_WIDE && ev != GRAY_EV_WIDE)
+    {
+        gray_coast_ms = (u16)Cfg_Get(CFG_COAST_MS);
+    }
+    else if (gray_coast_ms >= GRAY_FRAME_MS)
+    {
+        gray_coast_ms = (u16)(gray_coast_ms - GRAY_FRAME_MS);
+    }
+    gray_prev_event = ev;
+
     /* ============================ 决策层 ============================ */
     switch (ev)
     {
         /* ---------------- 丢线：朝最后方向找，超时停车 ---------------- */
         case GRAY_EV_LOST:
+            /* 刚过完十字的“缝”：保护时间内继续按航向直行，不找线 */
+            if (gray_coast_ms > 0)
+            {
+                gray_lost_ms        = 0;
+                gray_filter_ready   = 0;
+                gray_last_raw_error = 998;      /* 调试区分：998 = 十字后短暂丢线 */
+
+                base_speed = Cfg_Get(CFG_BASE);
+                if (base_speed < Cfg_Get(CFG_MIN_SPEED)) base_speed = Cfg_Get(CFG_MIN_SPEED);
+                gray_base_ramp  = gray_ramp_step(gray_base_ramp, base_speed);
+                gray_base_speed = gray_base_ramp;
+
+                if (!gray_yaw_hold_valid) gray_hold_latch();
+                gray_correction = gray_heading_correction();
+                gray_output(gray_base_ramp, gray_correction);
+                return;
+            }
+
             gray_filter_ready   = 0;
             gray_last_raw_error = 999;
             gray_i_sum          = 0;
@@ -581,7 +676,10 @@ void SearchRun(void)
             }
             return;
 
-        /* ---------------- 宽黑：十字 / 横黑带 / 停车线 → 锁 0 直行 ---------------- */
+        /* ---------------- 宽黑：十字 / 横黑带 / 停车线 ----------------
+         * 默认行为 = 直行：锁存航向，用陀螺把车身按在原方向上走完这一段。
+         * 没有陀螺时修正恒为 0，等于“锁 0 直行”。
+         */
         case GRAY_EV_WIDE:
             gray_i_sum          = 0;
             gray_prev_error     = 0;
@@ -605,7 +703,11 @@ void SearchRun(void)
 
             gray_base_ramp  = gray_ramp_step(gray_base_ramp, base_speed);
             gray_base_speed = gray_base_ramp;
-            Motor_SetSpeed(gray_base_ramp, gray_base_ramp);
+
+            if (!gray_yaw_hold_valid) gray_hold_latch();   /* 进来的第一帧锁航向 */
+
+            gray_correction = gray_heading_correction();
+            gray_output(gray_base_ramp, gray_correction);
             return;
 
         default:
@@ -704,16 +806,7 @@ void SearchRun(void)
     gray_correction = correction;
     gray_prev_error = error;
 
-    left_speed  = (int16_t)(gray_base_ramp + correction);
-    right_speed = (int16_t)(gray_base_ramp - correction);
-
-    /* 急弯允许内轮倒转（"原地搓"能过 180°），但要限幅防止原地打转 */
-    if (left_speed  < -Cfg_Get(CFG_INNER_REV)) left_speed  = (int16_t)(-Cfg_Get(CFG_INNER_REV));
-    if (left_speed  >  95)                     left_speed  =  95;
-    if (right_speed < -Cfg_Get(CFG_INNER_REV)) right_speed = (int16_t)(-Cfg_Get(CFG_INNER_REV));
-    if (right_speed >  95)                     right_speed =  95;
-
-    Motor_SetSpeed(left_speed, right_speed);
+    gray_output(gray_base_ramp, correction);
 }
 
 /* ---------------- 调试接口 ---------------- */

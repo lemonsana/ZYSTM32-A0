@@ -6,6 +6,7 @@
 #include "IRAvoid.h"
 #include "keysacn.h"
 #include "remote.h"
+#include "imu.h"
 #include "stm32f10x.h"
 
 #include <stdio.h>
@@ -40,6 +41,7 @@ enum
     ST_SONIC_WAIT,
     ST_KEY,
     ST_REMOTE,
+    ST_IMU,
     ST_CFG,
     ST_SUMMARY,
     ST_DONE
@@ -53,7 +55,8 @@ enum
 #define R_KEY       (1 << 4)
 #define R_REMOTE    (1 << 5)
 #define R_CFG       (1 << 6)
-#define R_ALL       (R_GRAY | R_MOTOR | R_SERVO | R_SONIC | R_KEY | R_REMOTE | R_CFG)
+#define R_IMU       (1 << 7)
+#define R_ALL       (R_GRAY | R_MOTOR | R_SERVO | R_SONIC | R_KEY | R_REMOTE | R_CFG | R_IMU)
 
 static u8  st_step = ST_INTRO;
 static u8  st_init = 0;         /* 本步的"进入动作"是否已执行 */
@@ -132,7 +135,7 @@ app_task_result_t SelfTest_Update(void)
                 st_init = 1;
                 st_timer = 300;
 #if DEBUG_UART
-                printf("[TEST] 步骤1/7 灰度...\r\n");
+                printf("[TEST] 步骤1/8 灰度...\r\n");
 #endif
                 break;
             }
@@ -200,7 +203,7 @@ app_task_result_t SelfTest_Update(void)
                 printf("[TEST] 灰度: %s (ready=%d, 读到=%d)\r\n",
                        (Gray_IsReady() && st_gray_ok) ? "PASS" : "FAIL",
                        Gray_IsReady(), st_gray_ok);
-                printf("[TEST] 步骤2/7 电机（看轮子转不转、方向对不对）...\r\n");
+                printf("[TEST] 步骤2/8 电机（看轮子转不转、方向对不对）...\r\n");
 #endif
                 if (Gray_IsReady() && st_gray_ok) st_pass(R_GRAY);
                 else                              st_fail(R_GRAY);
@@ -275,7 +278,7 @@ app_task_result_t SelfTest_Update(void)
             {
                 st_init = 1;
 #if DEBUG_UART
-                printf("[TEST] 步骤3/7 舵机（看是否扫到左/右/中）...\r\n");
+                printf("[TEST] 步骤3/8 舵机（看是否扫到左/右/中）...\r\n");
 #endif
                 st_pass(R_SERVO);
             }
@@ -327,7 +330,7 @@ app_task_result_t SelfTest_Update(void)
             }
             if (st_timer > MODE_TASK_MS) { st_timer -= MODE_TASK_MS; break; }
 #if DEBUG_UART
-            printf("[TEST] 步骤4/7 超声波（手放前方 10~30cm，连测 3 次）...\r\n");
+            printf("[TEST] 步骤4/8 超声波（手放前方 10~30cm，连测 3 次）...\r\n");
 #endif
             st_goto(ST_SONIC, 0);
             break;
@@ -364,7 +367,7 @@ app_task_result_t SelfTest_Update(void)
 
 #if DEBUG_UART
                 printf("[TEST] 超声波中位数: %d cm -> %s\r\n", med, (med > 0) ? "PASS" : "FAIL(无回波)");
-                printf("[TEST] 步骤5/7 按键（4 秒内按一下 PC2）...\r\n");
+                printf("[TEST] 步骤5/8 按键（4 秒内按一下 PC2）...\r\n");
 #endif
                 if (med > 0) st_pass(R_SONIC);
                 else         st_fail(R_SONIC);
@@ -390,7 +393,7 @@ app_task_result_t SelfTest_Update(void)
 #endif
                 st_pass(R_KEY);
 #if DEBUG_UART
-                printf("[TEST] 步骤6/7 遥控（4 秒内按遥控器任意键）...\r\n");
+                printf("[TEST] 步骤6/8 遥控（4 秒内按遥控器任意键）...\r\n");
 #endif
                 st_goto(ST_REMOTE, 0);
                 break;
@@ -436,13 +439,42 @@ app_task_result_t SelfTest_Update(void)
             }
             break;
 
+        /* ------------------------------ 陀螺 ------------------------------ */
+        case ST_IMU:
+            if (!st_init)
+            {
+                st_init = 1;
+#if DEBUG_UART
+                printf("[TEST] 步骤7/8 陀螺（静止时 yaw 应该基本不动）...\r\n");
+#endif
+                if (Imu_IsReady())
+                {
+#if DEBUG_UART
+                    printf("[TEST] imu ok  id=0x%02X  bias=%d(0.01dps)  yaw=%d\r\n",
+                           Imu_WhoAmI(),
+                           (int)(Imu_GetBias() * 100.0f),
+                           (int)Imu_GetYaw());
+#endif
+                    st_pass(R_IMU);
+                }
+                else
+                {
+#if DEBUG_UART
+                    printf("[TEST] imu FAIL（查 SCL/SDA 是否接反、AD0 是否接 GND、模块是否 5V 供电）\r\n");
+#endif
+                    st_fail(R_IMU);
+                }
+            }
+            st_goto(ST_CFG, 0);
+            break;
+
         /* ------------------------------ 参数 ------------------------------ */
         case ST_CFG:
             if (!st_init)
             {
                 st_init = 1;
 #if DEBUG_UART
-                printf("[TEST] 步骤7/7 参数与 Flash...\r\n");
+                printf("[TEST] 步骤8/8 参数与 Flash...\r\n");
 #endif
                 Cfg_Print();
                 if (Cfg_IsFromFlash()) st_pass(R_CFG);   /* 上电读到了存盘参数 */

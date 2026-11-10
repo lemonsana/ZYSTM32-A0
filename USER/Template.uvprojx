@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app;..\SYSTEM\cfg;..\SYSTEM\selftest</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app;..\SYSTEM\cfg;..\SYSTEM\selftest;..\SYSTEM\imu</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -594,6 +594,11 @@
               <FileName>selftest.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\SYSTEM\selftest\selftest.c</FilePath>
+            </File>
+            <File>
+              <FileName>imu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\imu\imu.c</FilePath>
             </File>
           </Files>
         </Group>

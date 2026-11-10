@@ -48,10 +48,13 @@ typedef enum
     CFG_RAMP,           /* RAMP   加速斜坡系数/1000        */
     CFG_WIDE_MIN,       /* WIDE   几路压线算"宽黑"         */
     CFG_DEADBAND,       /* DEAD   中线死区                 */
+    CFG_CROSS_KP,       /* CROSSK 十字直行：航向 P（每 0.1° 的速度单位×100） */
+    CFG_CROSS_DEAD,     /* CROSSD 十字直行：航向死区（0.1°）  */
+    CFG_COAST_MS,       /* COAST  出宽黑后继续直行的保护时间(ms) */
     CFG_COUNT
 } cfg_id_t;
 
-#define CFG_VERSION     1
+#define CFG_VERSION     2
 
 void        Cfg_Init(void);                    /* 上电调用一次：默认值 + 读 Flash */
 int16_t     Cfg_Get(cfg_id_t id);              /* 取参数（越界返回 0） */

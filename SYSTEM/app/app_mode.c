@@ -8,6 +8,7 @@
 #include "IRAvoid.h"
 #include "cfg.h"
 #include "selftest.h"
+#include "imu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -477,7 +478,7 @@ void app_mode_debug_task(void)
 #if DEBUG_UART
     static u8 cnt = 0;
 
-    printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ev=%-4s act=%d cc=%d | ready=%d st=%d dist=%3d ang=%3d fus=%d\r\n",
+    printf("mode=%d L=%4d R=%4d | err=%4d corr=%4d spd=%3d ev=%-4s act=%d cc=%d yaw=%4d | ready=%d st=%d dist=%3d ang=%3d fus=%d\r\n",
            (g_active == APP_MODE_NONE) ? 0 : (int)(g_active + 1),
            Motor_GetLeft(),
            Motor_GetRight(),
@@ -487,6 +488,7 @@ void app_mode_debug_task(void)
            Gray_EventName(Gray_GetEvent()),
            Gray_GetActive(),
            Gray_GetCrossCount(),
+           (int)Imu_GetYaw(),
            Gray_IsReady(),
            AVoid_GetState(),
            AVoid_GetDistance(),

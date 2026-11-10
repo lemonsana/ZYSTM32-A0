@@ -9,6 +9,7 @@
 #include "sched.h"
 #include "app_mode.h"
 #include "cfg.h"
+#include "imu.h"
 
 #include <stdio.h>
 
@@ -37,9 +38,17 @@
  *      3. 基础速度加加速斜坡（只作用在 base 上，差速修正不打折）；
  *      4. 16 个循迹参数搬到运行期（SYSTEM/cfg），串口 SET/SAVE 存内部 Flash；
  *      5. 新增模式 4「自检」：灰度/电机/舵机/超声波/按键/遥控/参数逐项点名。
+ *
+ *  V7 相对 V6 的改动：
+ *      1. 新增 MPU6050（软件 I2C，默认 PC4/PC5，见 SYSTEM/imu/imu.h）：
+ *         只读 GYRO_Z 积分出航向角 yaw，上电静止 1.5s 自动标零偏；
+ *      2. 十字路口默认直行：进 EV_WIDE 时锁存航向，用陀螺把车身按原方向
+ *         走完交叉段；出宽黑后 GRAY_COAST_MS 内若丢线也继续直行，
+ *         不再原地找线（十字中间的缝是"过不去"的主要原因）；
+ *      3. 没接陀螺时自动退化成 V6 的"锁 0 直行"，不影响原有调参。
  * ========================================================================== */
 
-#define FIRMWARE_VER    "V6"
+#define FIRMWARE_VER    "V7"
 
 int main(void)
 {
@@ -61,9 +70,22 @@ int main(void)
 
     Cfg_Init();                 /* 参数：读 Flash，失败(空白/CRC 错)就用默认值 */
 
+    /* 陀螺：上电静止标定 ~1.5s（这段时间车必须静止、不能碰） */
+    {
+        u8 imu_ok = Imu_Init();
+#if DEBUG_UART
+        printf("[BOOT] imu %s (id=0x%02X, bias=%d)\r\n",
+               imu_ok ? "ok" : "FAIL(查 SCL/SDA/AD0/5V)",
+               Imu_WhoAmI(),
+               (int)(Imu_GetBias() * 100.0f));
+#endif
+        (void)imu_ok;
+    }
+
     Sched_Init();                                       /* TIM6 5ms，先不启动 */
 
     Sched_Register(app_mode_key_task, 5);               /* 前台：按键扫描 */
+    Sched_RegisterDeferred(Imu_Update, IMU_UPDATE_MS);  /* 后台：陀螺读数（必须先于模式任务） */
     Sched_RegisterDeferred(app_mode_task, MODE_TASK_MS);/* 后台：串口 + 模式推进 */
     Sched_RegisterDeferred(app_mode_debug_task, 200);   /* 后台：调试打印 */
 

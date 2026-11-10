@@ -52,19 +52,22 @@ static u8      g_cfg_from_flash = 0;
 static const char *const g_cfg_name[CFG_COUNT] =
 {
     "BASE", "GAIN", "FAR", "THD", "KD", "KI", "SLOW", "SLOWD",
-    "MIN", "REV", "CUT", "FULL", "REF", "RAMP", "WIDE", "DEAD"
+    "MIN", "REV", "CUT", "FULL", "REF", "RAMP", "WIDE", "DEAD",
+    "CROSSK", "CROSSD", "COAST"
 };
 
 /* ---- 取值范围（防止手滑把参数打成 5000） ---- */
 static const int16_t g_cfg_min[CFG_COUNT] =
 {
      0,   0,   0,   1,   0,   0,   0,   0,
-     0,   0,  10,  10,  10,  10,   1,   0
+     0,   0,  10,  10,  10,  10,   1,   0,
+     0,   0,   0
 };
 static const int16_t g_cfg_max[CFG_COUNT] =
 {
    100, 300, 300, 100, 200,  50, 100, 200,
-    95, 100, 255, 100, 100,1000,   9,  20
+    95, 100, 255, 100, 100,1000,   9,  20,
+   200, 100,2000
 };
 
 /* ==========================================================================
@@ -88,6 +91,9 @@ void Cfg_Defaults(void)
     g_cfg_v[CFG_RAMP]      = GRAY_RAMP_ALPHA;
     g_cfg_v[CFG_WIDE_MIN]  = GRAY_WIDE_MIN_ACTIVE;
     g_cfg_v[CFG_DEADBAND]  = GRAY_CENTER_DEADBAND;
+    g_cfg_v[CFG_CROSS_KP]  = GRAY_CROSS_KP;
+    g_cfg_v[CFG_CROSS_DEAD]= GRAY_CROSS_DEAD;
+    g_cfg_v[CFG_COAST_MS]  = GRAY_COAST_MS;
 
     g_cfg_from_flash = 0;
 }
@@ -236,16 +242,17 @@ u8 Cfg_IdOfName(const char *name)
 
 void Cfg_Print(void)
 {
-    CFG_PRINTF("[cfg] BASE=%d GAIN=%d FAR=%d THD=%d KD=%d KI=%d\r\n",
-           g_cfg_v[CFG_BASE],   g_cfg_v[CFG_GAIN],     g_cfg_v[CFG_GAIN_FAR],
-           g_cfg_v[CFG_FAR_THD], g_cfg_v[CFG_KD],      g_cfg_v[CFG_KI]);
-    CFG_PRINTF("[cfg] SLOW=%d SLOWD=%d MIN=%d REV=%d CUT=%d FULL=%d REF=%d\r\n",
-           g_cfg_v[CFG_SLOW],   g_cfg_v[CFG_SLOW_D],   g_cfg_v[CFG_MIN_SPEED],
-           g_cfg_v[CFG_INNER_REV], g_cfg_v[CFG_CUTOFF], g_cfg_v[CFG_FULL_ERR],
-           g_cfg_v[CFG_REF_SPEED]);
-    CFG_PRINTF("[cfg] RAMP=%d WIDE=%d DEAD=%d  src=%s\r\n",
-           g_cfg_v[CFG_RAMP],   g_cfg_v[CFG_WIDE_MIN], g_cfg_v[CFG_DEADBAND],
-           g_cfg_from_flash ? "FLASH" : "DEFAULT");
+    u8 i;
+
+    for (i = 0; i < CFG_COUNT; i++)
+    {
+        if ((i % 6) == 0) CFG_PRINTF("[cfg] ");
+        CFG_PRINTF("%s=%d ", g_cfg_name[i], g_cfg_v[i]);
+        if ((i % 6) == 5) CFG_PRINTF("\r\n");
+    }
+    if ((CFG_COUNT % 6) != 0) CFG_PRINTF("\r\n");
+
+    CFG_PRINTF("[cfg] src=%s\r\n", g_cfg_from_flash ? "FLASH" : "DEFAULT");
 }
 
 /* ==========================================================================
