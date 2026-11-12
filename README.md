@@ -251,6 +251,11 @@ LINE ─40cm×2─> SLOW ─22cm×2─> TURN_OUT ─300ms─> SHIFT ─550~1000m
 完整设计、每个状态的进入/退出条件、上车测试步骤见
 [`docs/V8-融合避障状态机.md`](docs/V8-融合避障状态机.md)。
 
+**可选：转角改成陀螺闭环。** 出厂是定时转角；把 `SYSTEM/fusion/fusion_avoid.h` 里的
+`FU_YAW_TURN` 改成 1（或在 Keil 的 Define 里加 `FU_YAW_TURN=1`），`TURN_OUT`/`STRAIGHTEN`
+就改成"转够 55° / 转回原航向才走"，陀螺没就绪或卡死时自动退回定时。打开前先手推车头
+确认 `yaw` 左转为正，细节见文档 §9。默认关闭，行为与定时版完全一致。
+
 ## 避障（R1，模式 2 单独使用）
 
 硬件：超声波 **TRIG=PC0 / ECHO=PC1**，舵机 **PB0（TIM3_CH3，50Hz）**。

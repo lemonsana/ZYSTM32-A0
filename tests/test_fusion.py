@@ -13,6 +13,7 @@
     * 重触发闩锁（绕完不会立刻二次触发）
     * 故障：FF_BLOCKED / FF_TIMEOUT / FF_GRAY
     * Stop 后电机停转
+    * 转角闭环（-DFU_YAW_TURN=1 另编一遍）：按角度退出、回正、陀螺卡死退回定时
 
 用法：
     GCC="C:\\C\\mingw64\\bin\\gcc.exe" python tests/test_fusion.py
@@ -54,6 +55,9 @@ typedef signed char    int8_t;
 
 #define DEBUG_UART 0
 #define GRAY_CHANNEL_MIRROR 0
+#ifndef FU_YAW_TURN
+#define FU_YAW_TURN 0
+#endif
 #define CFG_CUTOFF 3
 #define CFG_MIN_SPEED 4
 #define CFG_INNER_REV 5
@@ -75,7 +79,22 @@ static int16_t Cfg_Get(int id)
     (void)id;
     return 50;
 }
-static void Motor_SetSpeed(int l, int r) { ml = l; mr = r; }
+static float imu_yaw  = 0.0f;
+static float imu_rate = 0.02f;  /* 每单位轮速差、每拍转多少度 */
+static int   imu_ready = 1;
+static int   imu_frozen = 0;    /* 1 = 陀螺卡死：角度不随车轮动 */
+
+static u8 Imu_IsReady(void) { return (u8)imu_ready; }
+static float Imu_GetYaw(void) { return imu_frozen ? 0.0f : imu_yaw; }
+
+static void Motor_SetSpeed(int l, int r)
+{
+    ml = l; mr = r;
+#if FU_YAW_TURN
+    /* 差速积分成航向：左轮慢 → 车头左转 → yaw 变大（和 imu.c 的符号一致） */
+    if (!imu_frozen) imu_yaw += ((float)r - (float)l) * imu_rate;
+#endif
+}
 static void Motor_Stop(void)             { ml = 0; mr = 0; }
 static void SearchRun(void)              { searching++; ml = 20; mr = 20; }
 static void Gray_ResetIntegral(void)     { }
@@ -155,6 +174,12 @@ static void reset(void)
     t_wait = 0;
     scale = 100;
     last_state = -1;
+    imu_yaw = 0.0f;
+    imu_rate = 0.02f;
+    imu_ready = 1;
+    imu_frozen = 0;
+    (void)Imu_GetYaw();          /* 默认构建下也让打桩函数“被用到”，免得 -Wall 报警 */
+    (void)Imu_IsReady();
     Fusion_Start();
     tick();
 }
@@ -176,8 +201,61 @@ static void until_state(int target, int ms)
     }
 }
 
+#if FU_YAW_TURN
+/* 转角闭环用例（只在 -DFU_YAW_TURN=1 时编译） */
+static void test_yaw_turn(void)
+{
+    u32 t0, el;
+
+    (void)run_ms;                              /* 这个构建里没用到，-Wall 别报 */
+
+    /* ---- A. 陀螺正常：转出到 FU_TURN_DEG 就走，不等定时 ---- */
+    reset();
+    imu_rate = 0.0667f;                        /* 8°/拍，故意比实车快，好和 300ms 定时区分 */
+    t_dist = 20;
+    until_state(FU_TURN_OUT, 900);
+    assert(Fusion_GetState() == FU_TURN_OUT);
+
+    t0 = g_tick_ms;
+    while ((int)Fusion_GetState() == FU_TURN_OUT && (g_tick_ms - t0) < 900) tick();
+    el = g_tick_ms - t0;
+    assert(Fusion_GetState() == FU_SHIFT);
+    assert(el < 250);                          /* 角度到位就走，远早于 300ms 定时 */
+    assert(imu_yaw >= FU_TURN_DEG - FU_YAW_TOL_DEG - 3.0f);
+    assert(imu_yaw <= FU_TURN_DEG + 10.0f);
+
+    /* ---- B. 回正：STRAIGHTEN 把车头转回提交时的航向 ---- */
+    until_state(FU_STRAIGHTEN, 1600);
+    assert(Fusion_GetState() == FU_STRAIGHTEN);
+    t0 = g_tick_ms;
+    while ((int)Fusion_GetState() == FU_STRAIGHTEN && (g_tick_ms - t0) < 900) tick();
+    assert(Fusion_GetState() == FU_PASS);
+    fprintf(stderr, "  [yaw] at PASS: yaw=%.2f el=%lu\n",
+            (double)Imu_GetYaw(), (unsigned long)(g_tick_ms - t0));
+    assert(imu_yaw <= FU_YAW_TOL_DEG + 3.0f);
+
+    /* ---- C. 陀螺卡死：150ms 角度不涨 → 退回定时，绕行不许卡住 ---- */
+    reset();
+    imu_frozen = 1;
+    t_dist = 20;
+    until_state(FU_TURN_OUT, 900);
+    assert(Fusion_GetState() == FU_TURN_OUT);
+    t0 = g_tick_ms;
+    while ((int)Fusion_GetState() == FU_TURN_OUT && (g_tick_ms - t0) < 1500) tick();
+    el = g_tick_ms - t0;
+    assert(Fusion_GetState() == FU_SHIFT);
+    assert(el >= FU_TURN_OUT_MS - 30u && el <= FU_TURN_OUT_MS + 120u);
+
+    printf("PASS: yaw turn (angle exit, return-to-zero, stuck-gyro fallback)\n");
+}
+#endif
+
 int main(void)
 {
+#if FU_YAW_TURN
+    test_yaw_turn();
+    return 0;
+#else
     int i;
 
     /* ---------------- 1. 远处障碍：不触发 ---------------- */
@@ -332,6 +410,7 @@ int main(void)
     printf("PASS: decel->turn->shift->pass->seek->align->recover, "
            "slew limit, retrigger latch, blocked/timeout/gray faults, stop\n");
     return 0;
+#endif
 }
 """
 
@@ -349,25 +428,30 @@ def main():
 
     tmp = tempfile.mkdtemp(prefix="fusion_test_")
     cpath = os.path.join(tmp, "test.c")
-    exe = os.path.join(tmp, "test.exe")
     with open(cpath, "w", encoding="utf-8") as f:
         f.write(full)
 
     gcc = os.environ.get("GCC", "gcc")
-    cmd = [gcc, "-std=c99", "-Wall", "-Wextra", "-O1", "-o", exe, cpath]
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if r.returncode != 0:
-        sys.stderr.write(r.stdout + r.stderr)
-        sys.exit(1)
-    if r.stderr.strip():
-        sys.stderr.write(r.stderr)
 
-    r = subprocess.run([exe], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    sys.stderr.write(r.stderr)
-    sys.stdout.write(r.stdout)
-    if r.returncode != 0:
-        print("FAILED")
-        sys.exit(1)
+    # 编两遍：默认（定时转角，跑全部用例）＋ FU_YAW_TURN=1（只跑转角闭环用例）
+    for name, defs in (("timer", []), ("yaw", ["-DFU_YAW_TURN=1"])):
+        exe = os.path.join(tmp, "test_%s.exe" % name)
+        cmd = [gcc, "-std=c99", "-Wall", "-Wextra", "-O1"] + defs + ["-o", exe, cpath]
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode != 0:
+            sys.stderr.write(r.stdout + r.stderr)
+            sys.exit(1)
+        if r.stderr.strip():
+            sys.stderr.write(r.stderr)
+
+        r = subprocess.run([exe], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        sys.stderr.write(r.stderr)
+        sys.stdout.write(r.stdout)
+        if r.returncode != 0:
+            print("FAILED (%s build)" % name)
+            sys.exit(1)
 
     # 只做语法检查：确认 app_mode.c 里没有残留的旧符号
     print("PASS: Python syntax and source layout")

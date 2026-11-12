@@ -5,6 +5,7 @@
 #include "IRAvoid.h"
 #include "cfg.h"
 #include "app_mode.h"
+#include "imu.h"
 
 #include <stdio.h>
 
@@ -54,6 +55,9 @@ static u8  fu_side_dist;        /* 侧向距离（0=空/无回波） */
 static u8  fu_dist;             /* 前方距离（0=空/无回波） */
 static u8  fu_new_sample;       /* 本拍刚拿到一个新样本（状态机据此推进） */
 static u8  fu_probe_step;       /* SLOW 里的侧向探测序列 */
+
+static float fu_yaw0;           /* 提交绕行那一刻的航向（FU_YAW_TURN） */
+static u8    fu_yaw_on;         /* 本次绕行是否用航向闭环（陀螺没跟上会退回定时） */
 
 /* ---------------------------- 灰度行信息 ---------------------------- */
 typedef struct
@@ -123,6 +127,18 @@ static void turn(int dir, int speed)
 
     drive(-sign * speed, sign * speed);
 }
+
+#if FU_YAW_TURN
+/* 相对提交点的转角，"朝绕行侧为正"。
+ * 左绕时车头左转、yaw 增大；右绕时车头右转、yaw 减小，所以右绕要取反。
+ * Imu_GetYaw() 是累计角（不 wrap），直接相减即可。 */
+static float fu_yaw_since(void)
+{
+    float d = Imu_GetYaw() - fu_yaw0;
+
+    return fu_side ? d : -d;
+}
+#endif
 
 /* ============================================================================
  *  灰度：一次读 8 路，算覆盖度 + 加权重心
@@ -243,6 +259,8 @@ void Fusion_Start(void)
     fu_dist        = 0;
     fu_new_sample  = 0;
     fu_probe_step  = 0;
+    fu_yaw0        = 0.0f;
+    fu_yaw_on      = 0;
 
     Gray_SetSpeedScale(100);
     AVoid_Servo(FU_SERVO_CENTER);
@@ -398,6 +416,10 @@ void Fusion_Update(void)
                 AVoid_Servo(FU_SERVO_CENTER);
                 Gray_ResetIntegral();
                 fu_maneuver_start = g_tick_ms;
+#if FU_YAW_TURN
+                fu_yaw0   = Imu_GetYaw();
+                fu_yaw_on = Imu_IsReady() ? 1u : 0u;
+#endif
 #if DEBUG_UART
                 printf("[fus] SLOW->TURN_OUT d=%u side=%u side_d=%u\r\n",
                        fu_dist, fu_side, fu_side_dist);
@@ -417,10 +439,32 @@ void Fusion_Update(void)
     /* =====================================================================
      *  FU_TURN_OUT：向绕行侧转出去
      *  进入：SLOW 连续确认
-     *  退出：转满 FU_TURN_OUT_MS（这一段的量由"车头要多偏"决定，先固定）
+     *  退出：FU_YAW_TURN=0 → 转满 FU_TURN_OUT_MS
+     *        FU_YAW_TURN=1 → 航向转出 FU_TURN_DEG（陀螺没跟上就退回定时）
      * ===================================================================== */
     case FU_TURN_OUT:
         turn(1, FU_TURN_SPEED);
+#if FU_YAW_TURN
+        if (fu_yaw_on)
+        {
+            u32   el = g_tick_ms - fu_entered;
+            float d  = fu_yaw_since();
+
+            if (el >= FU_YAW_STALL_MS && d < FU_YAW_STALL_DEG)
+            {
+                fu_yaw_on = 0;              /* 车在转但角度不涨：陀螺卡了 */
+            }
+            else if (d >= FU_TURN_DEG - FU_YAW_TOL_DEG)
+            {
+                enter(FU_SHIFT);
+            }
+            else if (el >= FU_TURN_OUT_MAX_MS)
+            {
+                enter(FU_SHIFT);
+            }
+            break;                          /* 有陀螺时不再看 FU_TURN_OUT_MS 定时 */
+        }
+#endif
         if ((g_tick_ms - fu_entered) >= FU_TURN_OUT_MS)
         {
             enter(FU_SHIFT);
@@ -456,10 +500,24 @@ void Fusion_Update(void)
 
     /* =====================================================================
      *  FU_STRAIGHTEN：车头回正
-     *  退出：回满 FU_STRAIGHTEN_MS
+     *  退出：FU_YAW_TURN=0 → 回满 FU_STRAIGHTEN_MS
+     *        FU_YAW_TURN=1 → 航向回到提交点（兜底 FU_STRAIGHTEN_MAX_MS）
      * ===================================================================== */
     case FU_STRAIGHTEN:
         turn(-1, FU_TURN_SPEED);
+#if FU_YAW_TURN
+        if (fu_yaw_on)
+        {
+            u32   el = g_tick_ms - fu_entered;
+            float d  = fu_yaw_since();
+
+            if (d <= FU_YAW_TOL_DEG || el >= FU_STRAIGHTEN_MAX_MS)
+            {
+                enter(FU_PASS);
+            }
+            break;                          /* 有陀螺时不看 FU_STRAIGHTEN_MS 定时 */
+        }
+#endif
         if ((g_tick_ms - fu_entered) >= FU_STRAIGHTEN_MS)
         {
             enter(FU_PASS);

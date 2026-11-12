@@ -105,6 +105,30 @@
 /* ---------------------------- 方向 ---------------------------- */
 #define FU_LEFT_DEFAULT     1u   /* 左右都空/都没数据时默认往哪边绕（1=左） */
 
+/* ---------------------- 转角闭环（可选，默认关） ---------------------- */
+/*
+ * FU_YAW_TURN = 1：TURN_OUT / STRAIGHTEN 改用 MPU6050 的航向角闭环，
+ *   转出角度和回正角度由陀螺积分判定，不再依赖 FU_TURN_OUT_MS / FU_STRAIGHTEN_MS。
+ *   陀螺没就绪、或者车在转但角度几乎不动（陀螺卡死 / 角度池没更新）时，
+ *   本段自动退回原来的定时逻辑，绕行不会因此卡住。
+ *
+ * 默认 0：行为与 V8.0 完全一致。先把车架空、手推着转 90°，看串口里
+ * `yaw` 的变化方向和 IMU_YAW_SIGN 是否一致，再考虑打开。
+ *
+ * 不想改这个文件时，也可以在 Keil 的 Options → C/C++ → Define 里加
+ *   FU_YAW_TURN=1
+ * 效果一样（下面用 #ifndef 保护过）。
+ */
+#ifndef FU_YAW_TURN
+#define FU_YAW_TURN         0
+#endif
+#define FU_TURN_DEG         55      /* 绕行时车头要转出的角度（度） */
+#define FU_YAW_TOL_DEG      6.0f    /* 角度到位死区（度） */
+#define FU_YAW_STALL_MS     150u    /* 转这么久角度还不涨 → 判定陀螺没跟上 */
+#define FU_YAW_STALL_DEG    8.0f    /* 上面那段时间至少要转过这么多 */
+#define FU_TURN_OUT_MAX_MS  800u    /* 有陀螺时的兜底（定时版的 2.6 倍） */
+#define FU_STRAIGHTEN_MAX_MS 800u   /* 回正兜底 */
+
 /* ---------------------------- 对外接口 ---------------------------- */
 void Fusion_Start(void);            /* 进入模式 1：清状态、复位限速 */
 void Fusion_Update(void);           /* 每 10ms 调一次 */
