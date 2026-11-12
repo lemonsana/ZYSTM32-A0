@@ -76,4 +76,8 @@ u8   AVoid_GetAngle(void);      /* 当前舵机角度 */
 u8   AVoid_Measure(void);       /* 阻塞测一次距离(cm)，0=无效；最长 30ms */
 void AVoid_Servo(u8 deg);       /* 直接设置舵机角度 0~180 */
 
+/* ---- 非阻塞测距（融合状态机用：发起后每 10ms 推一次，不忙等 30ms） ---- */
+u8   AVoid_SampleStart(void);   /* 发起一次测距：1=已发起，0=上一次还没结束 */
+u8   AVoid_SamplePoll(u8 *cm);  /* 0=还在测；1=完成且有效(*cm)；2=完成但无回波/超时 */
+
 #endif

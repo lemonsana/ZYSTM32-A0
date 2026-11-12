@@ -6,6 +6,7 @@
 #include "remote.h"
 #include "IRSEARCH.h"
 #include "IRAvoid.h"
+#include "fusion_avoid.h"
 #include "cfg.h"
 #include "selftest.h"
 #include "imu.h"
@@ -26,21 +27,9 @@
  *      stop    离开时调一次
  * ========================================================================== */
 
-/* ------------------------- 融合状态机状态 ------------------------- */
-#define FUS_LINE      0             /* 正常循迹 */
-#define FUS_SCAN      1             /* 停车扫描左右 */
-#define FUS_TURN      2             /* 转向绕行 */
-#define FUS_SEEK      3             /* 原地反向找线 */
-#define FUS_COOLDOWN  4             /* 冷静期 */
-
-static u8  fus_state    = FUS_LINE;
-static u8  fus_step     = 0;
-static u16 fus_timer    = 0;
-static u16 fus_tick     = 0;
-static u8  fus_dist     = 0;
-static u8  fus_dist_l   = 0;
-static u8  fus_dist_r   = 0;
-static u8  fus_dir_left = 1;        /* 往左绕?  0xFF = 原地掉头 */
+/* 模式 1 的运动控制权全部交给 SYSTEM/fusion/fusion_avoid.c 里的状态机，
+ * 这里只负责：进入/退出、点灯、把它接到 10ms 任务上。
+ * 原来的 FUS_LINE/SCAN/TURN/SEEK/COOLDOWN 五态已删除（停车扫描 + 定时转向那套）。 */
 
 static u8  g_active = APP_MODE_NONE;
 
@@ -72,15 +61,11 @@ static const app_mode_desc_t g_modes[] =
 #define APP_MODE_COUNT  ((u8)(sizeof(g_modes) / sizeof(g_modes[0])))
 
 /* ==========================================================================
- *  模式1：循迹 + 避障
+ *  模式1：循迹 + 避障（融合状态机在 SYSTEM/fusion/fusion_avoid.c）
  *  ========================================================================== */
 static void mode1_start(void)
 {
-    fus_state    = FUS_LINE;
-    fus_step     = 0;
-    fus_timer    = 0;
-    fus_tick     = 0;
-    fus_dir_left = 1;
+    Fusion_Start();                 /* 清状态、复位限速、舵机回中 */
 
     LED_D4_SET;
     LED_D3_RESET;
@@ -89,140 +74,35 @@ static void mode1_start(void)
 
 static void mode1_stop(void)
 {
-    fus_state = FUS_LINE;
-    fus_timer = 0;
-    fus_tick  = 0;
+    Fusion_Stop();                  /* 停车 + 限速复位 + 舵机回中 */
+
+    LED_D3_RESET;
+    BEEP_RESET;
 }
 
 static app_task_result_t mode1_update(void)
 {
-    switch (fus_state)
+    u8 st;
+
+    Fusion_Update();                /* 10ms 一拍，内部自己管电机 */
+    st = Fusion_GetState();
+
+    if (st == FU_FAULT)
     {
-        /* ---------------- 循迹 + 定时测前方 ---------------- */
-        case FUS_LINE:
-            LED_D4_SET;
-            LED_D3_RESET;
-            SearchRun();
-
-            if (++fus_tick >= (FUS_MEAS_PERIOD_MS / MODE_TASK_MS))
-            {
-                fus_tick = 0;
-                fus_dist = AVoid_Measure();
-
-                if (fus_dist && fus_dist < FUS_TRIGGER_CM)
-                {
-                    Motor_Stop();
-                    Gray_ResetIntegral();
-                    AVoid_Servo(90);
-                    fus_state = FUS_SCAN;
-                    fus_step  = 0;
-                    fus_timer = FUS_SETTLE_MS;
-                    BEEP_SET;
-                    LED_D3_SET;
-                }
-            }
-            break;
-
-        /* ---------------- 停车扫描：中 → 左 → 右 ---------------- */
-        case FUS_SCAN:
-            Motor_Stop();
-
-            if (fus_timer > 0) { fus_timer -= MODE_TASK_MS; break; }
-
-            if (fus_step == 0)
-            {
-                fus_dist = AVoid_Measure();          /* 前方（已知有障碍） */
-                AVoid_Servo(FUS_SERVO_LEFT);
-                fus_step  = 1;
-                fus_timer = FUS_SETTLE_MS;
-            }
-            else if (fus_step == 1)
-            {
-                fus_dist_l = AVoid_Measure();        /* 左侧 */
-                AVoid_Servo(FUS_SERVO_RIGHT);
-                fus_step  = 2;
-                fus_timer = FUS_SETTLE_MS;
-            }
-            else
-            {
-                fus_dist_r = AVoid_Measure();        /* 右侧，然后决策 */
-                AVoid_Servo(90);
-
-                if (fus_dist_l < FUS_MIN_GAP_CM && fus_dist_r < FUS_MIN_GAP_CM)
-                {
-                    fus_dir_left = 0xFF;             /* 两侧都堵 → 原地掉头 */
-                }
-                else
-                {
-                    fus_dir_left = ((fus_dist_l ? fus_dist_l : 200) >=
-                                    (fus_dist_r ? fus_dist_r : 200)) ? 1 : 0;
-                }
-
-                fus_state = FUS_TURN;
-                fus_timer = FUS_TURN_MS;
-            }
-            break;
-
-        /* ---------------- 转向绕行 ---------------- */
-        case FUS_TURN:
-            if (fus_dir_left == 0xFF)
-                Motor_SetSpeed(-50, 50);             /* 原地左掉头 */
-            else if (fus_dir_left)
-                Motor_SetSpeed(0, 85);               /* 左转：左轮停 */
-            else
-                Motor_SetSpeed(85, 0);               /* 右转：右轮停 */
-
-            if (fus_timer > MODE_TASK_MS) fus_timer -= MODE_TASK_MS;
-            else
-            {
-                Motor_Stop();
-                fus_state = FUS_SEEK;
-                fus_timer = FUS_SEEK_TIMEOUT_MS;
-            }
-            break;
-
-        /* ---------------- 原地反向找线 ---------------- */
-        case FUS_SEEK:
-            if (Gray_IsOnLine())                     /* 看到线了 */
-            {
-                Motor_Stop();
-                Gray_ResetIntegral();
-                fus_state = FUS_COOLDOWN;
-                fus_timer = FUS_COOLDOWN_MS;
-                BEEP_RESET;
-                LED_D3_RESET;
-                break;
-            }
-
-            if (fus_timer <= MODE_TASK_MS)           /* 超时：先回到循迹 */
-            {
-                Motor_Stop();
-                Gray_ResetIntegral();
-                fus_state = FUS_COOLDOWN;
-                fus_timer = FUS_COOLDOWN_MS;
-                BEEP_RESET;
-                LED_D3_RESET;
-                break;
-            }
-            fus_timer -= MODE_TASK_MS;
-
-            /* 往反方向转：刚才是左绕，现在就右转找线（反之亦然） */
-            if (fus_dir_left == 0xFF || fus_dir_left)
-                Motor_SetSpeed(FUS_SEEK_SPEED, -FUS_SEEK_SPEED);   /* 右转找线 */
-            else
-                Motor_SetSpeed(-FUS_SEEK_SPEED, FUS_SEEK_SPEED);   /* 左转找线 */
-            break;
-
-        /* ---------------- 冷静期 ---------------- */
-        case FUS_COOLDOWN:
-            SearchRun();
-            if (fus_timer > MODE_TASK_MS) fus_timer -= MODE_TASK_MS;
-            else fus_state = FUS_LINE;
-            break;
-
-        default:
-            fus_state = FUS_LINE;
-            break;
+        LED_D4_RESET;
+        LED_D3_SET;                 /* 故障：D3 常亮，车已停，等人处理 */
+        BEEP_SET;
+    }
+    else if (st >= FU_SLOW && st <= FU_COOL)
+    {
+        LED_D4_RESET;
+        LED_D3_SET;                 /* 绕行/找线中 */
+    }
+    else
+    {
+        LED_D4_SET;
+        LED_D3_RESET;
+        BEEP_RESET;
     }
 
     return APP_TASK_RUNNING;
@@ -301,16 +181,11 @@ void IR_IN(void)
 void app_mode_init(void)
 {
     g_active = APP_MODE_NONE;
-    fus_state = FUS_LINE;
-    fus_step = 0;
-    fus_timer = 0;
-    fus_tick = 0;
-    fus_dir_left = 1;
 }
 
 u8   app_mode_count(void)              { return APP_MODE_COUNT; }
 u8   app_mode_get(void)                { return g_active; }
-u8   app_mode_fusion_state(void)       { return fus_state; }
+u8   app_mode_fusion_state(void)       { return Fusion_GetState(); }
 
 char app_mode_menu_char(u8 idx)
 {
@@ -493,7 +368,7 @@ void app_mode_debug_task(void)
            AVoid_GetState(),
            AVoid_GetDistance(),
            AVoid_GetAngle(),
-           fus_state);
+           app_mode_fusion_state());
 
     if (++cnt >= 5)
     {

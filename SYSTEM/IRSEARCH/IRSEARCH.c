@@ -59,6 +59,11 @@ static u16     gray_cross_count  = 0;                  /* 上电以来宽黑次�
 /* ---- V6 速度斜坡状态（只作用在基础速度上） ---- */
 static int16_t gray_base_ramp = 0;
 
+/* ---- 外部限速（融合避障用）：100 = 原速，行为与改动前完全一致 ----
+ * 只缩放"基础速度"，不碰差速修正量：减速的同时保留转向能力，
+ * 这样避障前半段可以边减速边循迹，而不是一脚踩停。 */
+static u8 gray_speed_scale = 100;
+
 /* ---- PID 状态 ---- */
 static int32_t gray_i_sum      = 0;       /* 积分累加，单位：误差·毫秒 */
 static int16_t gray_prev_error = 0;       /* 上一帧误差（D 项用） */
@@ -369,6 +374,7 @@ void IRSearchInit(void)
     gray_base_speed   = 0;
     gray_i_sum        = 0;
     gray_prev_error   = 0;
+    gray_speed_scale  = 100;
 
     gray_iface_init();
     delay_ms(50);                   /* 等模块上电稳定 */
@@ -377,6 +383,18 @@ void IRSearchInit(void)
     if (!gray_iface_config()) return;
 
     gray_ready = 1;
+}
+
+/* ============================================================================
+ *  外部限速：融合避障用
+ *  ----------------------------------------------------------------------------
+ *  循迹主任务照常跑（PID、斜坡、限幅都不变），只在输出前把基础速度乘 pct%。
+ *  差速修正量不缩放，所以 55% 时"减速但转向照样打得动"。
+ *  避障流程结束时必须恢复 100%，否则会一直慢速跑。
+ * ========================================================================== */
+void Gray_SetSpeedScale(u8 pct)
+{
+    gray_speed_scale = (pct > 100u) ? 100u : pct;
 }
 
 /* 读一次 8 路，算出：位置误差 + 覆盖度（几路压线）
@@ -551,9 +569,18 @@ static int16_t gray_heading_correction(void)
 /* 统一输出：base ± correction，带内轮反转限幅 */
 static void gray_output(int16_t base, int16_t correction)
 {
-    int16_t l   = (int16_t)(base + correction);
-    int16_t r   = (int16_t)(base - correction);
+    int16_t l;
+    int16_t r;
     int16_t rev = Cfg_Get(CFG_INNER_REV);
+
+    /* 三处调用（宽黑/保护直行/正常 PID）统一在这里限速，只缩基础速度 */
+    if (gray_speed_scale < 100u)
+    {
+        base = (int16_t)(((int32_t)base * gray_speed_scale) / 100);
+    }
+
+    l = (int16_t)(base + correction);
+    r = (int16_t)(base - correction);
 
     if (l < -rev) l = (int16_t)(-rev);
     if (l >  95)  l =  95;

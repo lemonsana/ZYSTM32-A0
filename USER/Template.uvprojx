@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app;..\SYSTEM\cfg;..\SYSTEM\selftest;..\SYSTEM\imu</IncludePath>
+              <IncludePath>..\USER;..\CORE;..\STM32F10x_FWLib\inc;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\SYSTEM\motor;..\SYSTEM\keysacn;..\SYSTEM\IRSEARCH;..\SYSTEM\IRAvoid;..\SYSTEM\remote;..\SYSTEM\sched;..\SYSTEM\app;..\SYSTEM\cfg;..\SYSTEM\selftest;..\SYSTEM\imu;..\SYSTEM\fusion</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -569,6 +569,11 @@
               <FileName>IRAvoid.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\SYSTEM\IRAvoid\IRAvoid.c</FilePath>
+            </File>
+            <File>
+              <FileName>fusion_avoid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\SYSTEM\fusion\fusion_avoid.c</FilePath>
             </File>
             <File>
               <FileName>remote.c</FileName>

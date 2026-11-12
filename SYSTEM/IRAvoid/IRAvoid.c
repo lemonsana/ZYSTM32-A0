@@ -183,6 +183,78 @@ static u8 Ultra_Measure(void)
 }
 
 /* ==========================================================================
+ *  非阻塞测距：给融合状态机用
+ *  --------------------------------------------------------------------------
+ *  Ultra_Measure() 会忙等最多 30ms，塞进 10ms 的调度节拍里会把整条时间轴
+ *  拖长（融合状态机算的 "300ms 转出" 会变成 330ms）。这里拆成"发起 / 轮询"：
+ *      AVoid_SampleStart()  打一个 15us 触发脉冲就返回
+ *      AVoid_SamplePoll()   每 10ms 推一次，最多推 3 次（≈30ms）就放弃
+ *  轮询期间主循环照常跑，电机、灰度、按键都不受影响。
+ *  返回 0 = 还在测；1 = 测到了（*cm 有效）；2 = 超时/无回波（按"没有障碍"处理）
+ * ========================================================================== */
+static u8 av_sample_busy = 0;
+static u8 av_sample_wait = 0;
+
+u8 AVoid_SampleStart(void)
+{
+    if (av_sample_busy) return 0;
+
+    ultra_done  = 0;
+    ultra_width = 0;
+    ultra_stage = 1;
+
+    GPIO_SetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
+    delay_us(15);
+    GPIO_ResetBits(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN);
+
+    av_sample_busy = 1;
+    av_sample_wait = 0;
+    return 1;
+}
+
+u8 AVoid_SamplePoll(u8 *cm)
+{
+    u32 d;
+
+    if (!av_sample_busy)
+    {
+        if (cm) *cm = 0;
+        return 2;
+    }
+
+    if (ultra_done)
+    {
+        av_sample_busy = 0;
+        ultra_stage    = 0;
+
+        d = (u32)ultra_width / 58;
+        if (d == 0 || d > 200)              /* 无回波 / 超 2m 都算"没障碍" */
+        {
+            av_dist = 0;
+            if (cm) *cm = 0;
+            return 2;
+        }
+
+        av_dist = (u8)d;                    /* 调试行 dist= 才有意义 */
+        if (cm) *cm = (u8)d;
+        return 1;
+    }
+
+    if (av_sample_wait < 3) av_sample_wait++;
+
+    if (av_sample_wait >= 3)                /* 3 × 10ms ≈ 30ms 超时 */
+    {
+        av_sample_busy = 0;
+        ultra_stage    = 0;
+        if (cm) *cm = 0;
+        return 2;
+    }
+
+    if (cm) *cm = 0;
+    return 0;
+}
+
+/* ==========================================================================
  *  舵机驱动（TIM3_CH3 / PB0，50Hz）
  * ========================================================================== */
 

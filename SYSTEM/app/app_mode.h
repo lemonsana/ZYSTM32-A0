@@ -36,26 +36,10 @@ typedef struct
 /* ============================================================================
  *  模式1：循迹 + 避障（融合）
  *  ----------------------------------------------------------------------------
- *      循迹直行 ──前方 < FUS_TRIGGER_CM──→ 停车 → 舵机扫 中/左/右 → 选远侧
- *          → 转向绕行 → 原地反向找线 → 看到灰度线 → 冷静 → 回到循迹
- *
- *  调参提示（现象 → 改法）：
- *      FUS_TRIGGER_CM   撞上了才停 → 调大(50)；太早停 → 调小(25)
- *      FUS_TURN_MS      绕完回不到线 → 调大(800)；转过头 → 调小(450)
- *      FUS_SEEK_SPEED   找不到线 → 调大(55)；冲过头 → 调小(30)
- *      FUS_COOLDOWN_MS  刚上线又被触发 → 调大(700)
- *      FUS_SEEK_TIMEOUT_MS 找线最多转多久，超时先回循迹
+ *  状态机、距离门限、速度、超时等全部搬到 SYSTEM/fusion/fusion_avoid.h，
+ *  这里只留一句调用：mode1_update() -> Fusion_Update()。
+ *  调这部分参数请直接改 fusion_avoid.h 里的 FU_* 宏。
  * ========================================================================== */
-#define FUS_TRIGGER_CM       35     /* 前方小于它触发避让 */
-#define FUS_MIN_GAP_CM       20     /* 两侧都小于它 → 原地掉头 */
-#define FUS_TURN_MS         600     /* 转向绕行时长 */
-#define FUS_SETTLE_MS       250     /* 舵机到位等待 */
-#define FUS_SEEK_SPEED       40     /* 找线转速 */
-#define FUS_SEEK_TIMEOUT_MS 2500    /* 找线超时（超时就先回到循迹） */
-#define FUS_COOLDOWN_MS     400     /* 绕完冷静期，防止立刻又触发 */
-#define FUS_MEAS_PERIOD_MS  100     /* 循迹时多久测一次前方 */
-#define FUS_SERVO_LEFT      170     /* 扫左的舵机角 */
-#define FUS_SERVO_RIGHT      10     /* 扫右的舵机角 */
 
 /* ---------------------------- 接口 ---------------------------- */
 void app_mode_init(void);

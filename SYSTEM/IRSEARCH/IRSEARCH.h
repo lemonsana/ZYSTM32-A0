@@ -259,6 +259,7 @@ u8   Gray_GetEvent(void);           /* 最近一次事件（gray_event_t） */
 u16  Gray_GetCrossCount(void);      /* 上电以来"正常→宽黑"的次数（十字/横线计数） */
 void Gray_ResetCrossCount(void);
 void Gray_ResetRamp(void);          /* 清零速度斜坡（重新起步用） */
+void Gray_SetSpeedScale(u8 pct);    /* 基础速度缩放 0~100%（100=原速），差速不缩放 */
 const char *Gray_EventName(u8 ev);  /* 事件名，打印用 */
 
 #endif
