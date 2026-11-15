@@ -177,19 +177,16 @@ void Motor_Init(void)
 
 void SetMotorSpeed(unsigned char ucChannel,signed char cSpeed)
 {
-    int pwm = Motor_PwmOf(cSpeed);
-
-    if (ucChannel == 0)         /* 右轮：CH3/PB8，>0 前进 */
+    /* 原厂符号约定：ch0 = 右轮（>0 前进）；ch1 = 左轮（<0 前进）。
+     * 这里统一转成"正数=前进"再交给 Motor_SetOne，
+     * 让 MOTOR_DIR_INVERT_L/R 对老接口同样生效（否则两套接口方向会打架）。 */
+    if (ucChannel == 0)
     {
-        TIM_SetCompare3(TIM4, pwm);
-        if (cSpeed > 0)      RIGHT_MOTOR_GO_RESET;
-        else if (cSpeed < 0) RIGHT_MOTOR_GO_SET;
+        Motor_SetOne(1, (int)cSpeed);
     }
-    else                        /* 左轮：CH4/PB9，<0 前进（原厂符号约定） */
+    else
     {
-        TIM_SetCompare4(TIM4, pwm);
-        if (cSpeed > 0)      LEFT_MOTOR_GO_SET;
-        else if (cSpeed < 0) LEFT_MOTOR_GO_RESET;
+        Motor_SetOne(0, -(int)cSpeed);
     }
 }
 
