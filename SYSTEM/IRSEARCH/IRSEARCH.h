@@ -142,7 +142,10 @@
 #define GRAY_I_LIMIT         2500   /* 积分上限（误差·毫秒） */
 #define GRAY_BLACK_CUTOFF     180   /* 低于此值算黑线（白≈255 黑≈0） */
 #define GRAY_CENTER_DEADBAND    2   /* 误差死区 */
-#define GRAY_CHANNEL_MIRROR     0   /* 1 = 镜像探头顺序（方向反了改这个） */
+#define GRAY_CHANNEL_MIRROR     1   /* 1 = 镜像探头顺序（方向反了改这个）
+                                     * V7.2：实测"线在左却往右打" → 置 1（左右对调一次）。
+                                     * 它翻转的是 error 的正负号，所以转向、丢线找线
+                                     * 方向会一起翻，不会出现"循迹对了但找线反了"。 */
 
 #define GRAY_SLOW_GAIN         20   /* 速度调度：按 |误差| 降速 */
 #define GRAY_SLOW_D_GAIN       40   /* 速度调度：按 |误差变化| 降速（进弯预减速） */
