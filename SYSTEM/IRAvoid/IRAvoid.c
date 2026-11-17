@@ -33,11 +33,13 @@
 #define SERVO_PORT             GPIOB
 #define SERVO_PIN              GPIO_Pin_0      /* PB0  TIM3_CH3 */
 
+#if AVOID_HW_ENABLE
 /* ---------------------- 超声波测量状态 ---------------------- */
 static volatile u8  ultra_stage = 0;    /* 0=空闲  1=等上升沿  2=等下降沿 */
 static volatile u16 ultra_start = 0;    /* 上升沿时刻（TIM2 计数，1us） */
 static volatile u16 ultra_width = 0;    /* 回波高电平宽度（us） */
 static volatile u8  ultra_done  = 0;    /* 1=本次测量完成 */
+#endif /* AVOID_HW_ENABLE */
 
 /* ---------------------- 舵机 ---------------------- */
 static u8 av_angle = AV_SERVO_CENTER;
@@ -67,6 +69,7 @@ static u8  av_phase      = 0;      /* 边走边扫：0=转舵机 1=测距 */
  *  超声波驱动
  * ========================================================================== */
 
+#if AVOID_HW_ENABLE
 /* 初始化：PC0 推挽输出、PC1 下拉输入 + EXTI1 双沿、TIM2 1MHz 计数 */
 static void Ultra_Init(void)
 {
@@ -181,6 +184,10 @@ static u8 Ultra_Measure(void)
         return (u8)cm;
     }
 }
+#else  /* AVOID_HW_ENABLE == 0：PC0/PC1 已归陀螺仪 */
+/* 保留一个恒 0 的测距桩：AVoidRun() 状态机里的 5 处调用不用改一行 */
+u8 Ultra_Measure(void) { return 0; }
+#endif /* AVOID_HW_ENABLE */
 
 /* ==========================================================================
  *  舵机驱动（TIM3_CH3 / PB0，50Hz）
@@ -237,12 +244,18 @@ u8 AVoid_GetDistance(void) { return av_dist; }
 u8 AVoid_GetAngle(void)    { return av_angle; }
 
 /* 供融合模式复用：测距 / 设舵机角 */
+#if AVOID_HW_ENABLE
 u8 AVoid_Measure(void)      { return Ultra_Measure(); }
+#else
+u8 AVoid_Measure(void)      { return 0; }
+#endif
 void AVoid_Servo(u8 deg)    { Servo_SetAngle(deg); }
 
 void IRAvoidInit(void)
 {
+#if AVOID_HW_ENABLE
     Ultra_Init();
+#endif
     Servo_Init();
 
     av_state      = AV_IDLE;

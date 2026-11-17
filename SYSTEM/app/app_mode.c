@@ -1,4 +1,6 @@
 ﻿#include "app_mode.h"
+#include "gyro.h"
+#include "encoder.h"
 #include "sched.h"
 #include "motor.h"
 #include "keysacn.h"
@@ -234,7 +236,13 @@ static void mode2_start(void)
 
 static app_task_result_t mode2_update(void)
 {
+#if AVOID_HW_ENABLE
     AVoidRun();
+#else
+    /* V6.0：超声波已拆除（PC0/PC1 归陀螺仪），纯避障模式没有测距手段，
+     * 原地待命，不盲目前进。要恢复避障：见 IRAvoid.h 的 AVOID_HW_ENABLE。 */
+    Motor_Stop();
+#endif
     return APP_TASK_RUNNING;
 }
 
@@ -463,6 +471,13 @@ void app_mode_debug_task(void)
            AVoid_GetDistance(),
            AVoid_GetAngle(),
            fus_state);
+
+    printf("yaw=%5d pit=%4d rol=%4d gz=%5d | g=%d encL=%4d/%ld encR=%4d/%ld\r\n",
+           Gyro_GetYaw10(), Gyro_GetPitch10(), Gyro_GetRoll10(), Gyro_GetRateZ10(),
+           Gyro_IsReady(),
+           Encoder_GetDeltaL(), (long)Encoder_GetTotalL(),
+           Encoder_GetDeltaR(), (long)Encoder_GetTotalR());
+
 
     if (++cnt >= 5)
     {

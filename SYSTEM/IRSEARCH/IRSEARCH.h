@@ -176,6 +176,33 @@
 #define GRAY_LOST_STOP_MS    3000
 #define GRAY_FRAME_MS          10
 
+/* ============================================================================
+ *  陀螺仪航向辅助（V6.0，默认关闭）
+ *  ----------------------------------------------------------------------------
+ *  只干一件事：灰度认为"走得正"的时候，把已经偏掉的航向慢慢拉回来。
+ *  灰度仍然是主角 —— 误差一大（弯道 / 丢线 / 十字）就让开，绝不抢方向。
+ *
+ *  【开启三步】（参数说明见 docs/陀螺仪与编码器.md）
+ *      ① 先让陀螺仪跑通：串口第三行 yaw 随车右转变大、左转变小；
+ *         若相反，把 gyro.h 的 GYRO_YAW_CW_POSITIVE 改成 0；
+ *      ② 手推车走直线，确认 gz 在 ±5 以内、没有持续单向漂移；
+ *      ③ 把 GRAY_GYRO_ASSIST 改成 1 重新编译。转向反了就把 GRAY_GYRO_SIGN 取反。
+ *
+ *  【调参】
+ *      GRAY_GYRO_KP      偏 1° 给 0.1 的转向量；直线左右摆 → 调小，纠不回 → 调大
+ *      GRAY_GYRO_MAX     单拍最多叠加的转向量
+ *      GRAY_GYRO_GATE    |误差| 超过它就不插手（25 ≈ 线偏到阵列 1/4 处）
+ *      GRAY_GYRO_REF_ERR 误差小于它时，把航向基准按 1/REF_LEAK 往当前朝向泄放，
+ *      GRAY_GYRO_REF_LEAK 用来吸收 MPU6050 的零偏温漂（约 1~3°/分钟）
+ * ============================================================================ */
+#define GRAY_GYRO_ASSIST       0
+#define GRAY_GYRO_KP          20
+#define GRAY_GYRO_MAX         15
+#define GRAY_GYRO_GATE        25
+#define GRAY_GYRO_REF_ERR      8
+#define GRAY_GYRO_REF_LEAK     8
+#define GRAY_GYRO_SIGN        (-1)
+
 /* 调试接口 */
 void IRSearchInit(void);            /* 初始化传感器 */
 void SearchRun(void);               /* 循迹任务：由 app_mode 的 10ms 任务调用（MODE_TASK_MS） */

@@ -45,3 +45,4 @@ _*.sh
 
 # ---- Keil 每用户/会话文件 ----
 *.uvoptx
+_recover_fusion_v8/

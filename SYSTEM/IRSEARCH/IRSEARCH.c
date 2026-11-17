@@ -1,6 +1,7 @@
 ﻿#include "IRSEARCH.h"
 #include "delay.h"
 #include "motor.h"
+#include "gyro.h"
 #include "stm32f10x.h"
 
 /* ============================================================================
@@ -388,6 +389,62 @@ static u8 gray_calc_error(int16_t *error)
  *      corr = PID 输出（±GAIN 附近，顶到 ±50 说明满舵）
  *      spd  = 调度后的基础速度（最低 GRAY_MIN_SPEED）
  * ========================================================================== */
+/* ---------------------------------------------------------------------------
+ *  陀螺仪航向辅助（V6.0）
+ *  参数与开启方法见 IRSEARCH.h 的 GRAY_GYRO_* 那一段。
+ * ------------------------------------------------------------------------- */
+#if GRAY_GYRO_ASSIST
+static int16_t gray_yaw_ref;            /* 航向基准，0.1° */
+static u8      gray_yaw_ref_ok;         /* 1 = 基准已建立 */
+
+static int16_t gray_gyro_assist(int16_t err)
+{
+    int16_t yaw;
+    int16_t dev;
+    int32_t corr;
+
+    if (!Gyro_IsReady())
+    {
+        return 0;                       /* 陀螺仪没通：老老实实只跑灰度 */
+    }
+
+    yaw = Gyro_GetYaw10();
+
+    /* ① 第一次使用 / 刚切模式：把当前朝向当基准，本拍不修正 */
+    if (!gray_yaw_ref_ok)
+    {
+        gray_yaw_ref    = yaw;
+        gray_yaw_ref_ok = 1;
+        return 0;
+    }
+
+    dev = Gyro_AngleDiff10(yaw, gray_yaw_ref);  /* 偏离基准多少（右正左负） */
+
+    /* ② 弯道 / 丢线 / 十字：灰度正在忙，航向别插手 */
+    if (err > GRAY_GYRO_GATE || err < -GRAY_GYRO_GATE)
+    {
+        return 0;
+    }
+
+    /* ③ 走得正：基准慢慢跟着实际朝向走，把零偏漂移吸收掉 */
+    if (err <= GRAY_GYRO_REF_ERR && err >= -GRAY_GYRO_REF_ERR)
+    {
+        gray_yaw_ref = (int16_t)(gray_yaw_ref + dev / GRAY_GYRO_REF_LEAK);
+    }
+
+    /* ④ 修正量：偏 1° 给 KP/10 的转向量，再限幅 */
+    corr = ((int32_t)dev * GRAY_GYRO_KP * (int32_t)GRAY_GYRO_SIGN) / 100;
+    if (corr >  GRAY_GYRO_MAX) corr =  GRAY_GYRO_MAX;
+    if (corr < -GRAY_GYRO_MAX) corr = -GRAY_GYRO_MAX;
+
+    return (int16_t)corr;
+}
+
+#define GRAY_GYRO_RESET()   do { gray_yaw_ref = 0; gray_yaw_ref_ok = 0; } while (0)
+#else
+#define GRAY_GYRO_RESET()   do { } while (0)
+#endif
+
 void SearchRun(void)
 {
     int16_t raw_error = 0;
@@ -547,6 +604,10 @@ void SearchRun(void)
         correction = (int16_t)((int32_t)correction * k / 100L);
     }
 
+#if GRAY_GYRO_ASSIST
+    correction += gray_gyro_assist(error);   /* 航向辅助：只在走得正时微调 */
+#endif
+
     gray_correction = correction;
     gray_prev_error = error;
 
@@ -577,6 +638,7 @@ void Gray_ResetIntegral(void)
     gray_prev_error = 0;
     gray_filter_ready = 0;
     gray_lost_ms    = 0;
+    GRAY_GYRO_RESET();
 }
 
 /* 是否压到黑线：任意一路归一化值 < GRAY_BLACK_CUTOFF 即算压线
