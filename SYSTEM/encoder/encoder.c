@@ -56,9 +56,10 @@ static void enc1_init(void)
 
     RCC_APB2PeriphClockCmd(ENC1_RCC | RCC_APB2Periph_TIM8, ENABLE);
 
-    /* A/B 接浮空输入：编码器模块一般自带推挽输出，内部上下拉反而增加负载 */
+    /* A/B 接上拉输入：松甲编码器是"带上拉输出"，两种接法都能读；
+     * 内部 40k 上拉对新旧编码器都无害，且断线时不会浮空乱计数，故统一用 IPU */
     gpio.GPIO_Pin   = ENC1_A_PIN | ENC1_B_PIN;
-    gpio.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
+    gpio.GPIO_Mode  = GPIO_Mode_IPU;
     gpio.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(ENC1_PORT, &gpio);
 
