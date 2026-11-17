@@ -77,7 +77,7 @@
 #define ENC1_B_TIM_CH         GPIO_Pin_7
 #define ENC1_TIM_PORT         GPIOC
 #define ENC1_TIM_RCC          RCC_APB2Periph_GPIOC
-#define ENC1_SIGN             1                 /* 装反了（前进时计数变小）改成 -1 */
+#define ENC1_SIGN             (-1)                 /* 装反了（前进时计数变小）改成 -1 */
 
 /* ---------------- 编码器 2 ---------------- */
 #define ENC2_ENABLE           1
