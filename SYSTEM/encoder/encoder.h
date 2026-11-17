@@ -13,8 +13,8 @@
  *  ├──────┼────────────┼──────────────────────────────────────────────┤
  *  │ 1  A  │ PC6        │ TIM8_CH1，硬件正交解码（4 倍频，不占 CPU）     │
  *  │ 1  B  │ PC7        │ TIM8_CH2                                     │
- *  │ 2  A  │ PC8        │ EXTI8，软件正交解码（4 倍频，中断里只有几行）  │
- *  │ 2  B  │ PC9        │ EXTI9                                        │
+ *  │ 2  A  │ PB14       │ EXTI14，软件正交解码（4 倍频，中断里只有几行）│
+ *  │ 2  B  │ PB15       │ EXTI15                                       │
  *  └──────┴────────────┴──────────────────────────────────────────────┘
  *
  *  【为什么是这两个组合】TIM8 的 CH1/CH2 默认就在 PC6/PC7，本工程里这两只脚
@@ -25,15 +25,21 @@
  *  只剩下 TIM8 一个。所以第二路编码器走 EXTI 软件解码 —— 小车编码器单相
  *  频率只有几百 Hz，中断开销可以忽略，换来的是不用再抢定时器。
  *
- *  ！编码器供电：常见模块 5V 供电、A/B 输出 5V 电平。PC6~PC9 **不是 5V 容忍脚**，
- *    所以要么选 3.3V 供电的编码器，要么串 1kΩ 分压 / 加电平转换。
- *    直接接 5V 会烧引脚（或至少读数异常）。
+ *  ！编码器供电：松甲编码器 4.5~5V 供电、A/B 是"带上拉输出"（约 5V 电平）。
+ *    **本方案的 4 只脚全是 5V 容忍（FT）脚**，5V 直接进 MCU 即可，不用分压：
+ *      依据 STM32F103xCDE_DS_CH_V5.pdf 表5：PC6/PC7/PC8/PC9 标 "I/O FT"，
+ *      PB2~PB15、PD2、PA8~PA15 也是 FT。
+ *    ！但 PC0~PC5 不是 FT（表5 只写 "I/O"）—— 陀螺仪的 PC0/PC1 只能 3.3V。
+ *
+ *  ！PC9 在这块板子上**没有引出**：ZYSTM32-A0 原理图里 PC9(pin40) 的走线悬空、
+ *    没接到任何排针（PC6/PC7/PC8 都在 CN2 上，唯独 PC9 空）。所以第二路不用
+ *    PC8/PC9，改成 **PB14/PB15（CN2 的 11/12 脚）**，两只脚同属 EXTI15_10 组。
  *
  *  【引脚待定怎么办】整套都在下面这几个宏里，改宏 + 重新编译即可，不用动 .c：
- *      · PC6~PC9 是本工程当前唯一 4 只连续空闲的引脚，先按这套接；
- *      · 换到同一个 GPIO 口就行（比如 PA6/PA7、PB4/PB5）。
- *      · 第二路的 A/B 必须落在同一个 EXTI 组（Pin_5~Pin_9 一组，或 Pin_10~Pin_15
- *        一组），否则要改中断函数名，见 encoder.c 顶部的说明。
+ *      · 编码器1 = PC6/PC7（TIM8_CH1/CH2，硬件正交，不要改，改了就没硬件解码）；
+ *      · 编码器2 = PB14/PB15，两只脚都在 CN2 排针上、都是 FT、都属 EXTI15_10 组；
+ *      · 换脚时 A/B 必须落在同一个 EXTI 组（Pin_5~Pin_9 → EXTI9_5_IRQHandler，
+ *        Pin_10~Pin_15 → EXTI15_10_IRQHandler），否则要同时改中断函数名。
  *
  *  【计数与换算】
  *      Encoder_GetDeltaL/R()  每 ENC_TICK_MS 的增量（已做 4 倍频）
@@ -58,16 +64,16 @@
 
 /* ---------------- 编码器 2：EXTI 软件正交解码 ---------------- */
 #define ENC2_ENABLE           1
-#define ENC2_PORT             GPIOC
-#define ENC2_RCC              RCC_APB2Periph_GPIOC
-#define ENC2_A_PIN            GPIO_Pin_8        /* PC8 → EXTI8 */
-#define ENC2_B_PIN            GPIO_Pin_9        /* PC9 → EXTI9 */
-#define ENC2_A_PIN_SRC        GPIO_PinSource8
-#define ENC2_B_PIN_SRC        GPIO_PinSource9
-#define ENC2_PORT_SRC         GPIO_PortSourceGPIOC
-#define ENC2_A_EXTI_LINE      EXTI_Line8
-#define ENC2_B_EXTI_LINE      EXTI_Line9
-#define ENC2_IRQn             EXTI9_5_IRQn
+#define ENC2_PORT             GPIOB
+#define ENC2_RCC              RCC_APB2Periph_GPIOB
+#define ENC2_A_PIN            GPIO_Pin_14       /* PB14 → EXTI14（CN2 第 11 脚） */
+#define ENC2_B_PIN            GPIO_Pin_15       /* PB15 → EXTI15（CN2 第 12 脚） */
+#define ENC2_A_PIN_SRC        GPIO_PinSource14
+#define ENC2_B_PIN_SRC        GPIO_PinSource15
+#define ENC2_PORT_SRC         GPIO_PortSourceGPIOB
+#define ENC2_A_EXTI_LINE      EXTI_Line14
+#define ENC2_B_EXTI_LINE      EXTI_Line15
+#define ENC2_IRQn             EXTI15_10_IRQn
 #define ENC2_SIGN             1                 /* 装反了改成 -1 */
 
 /* ---------------- 单位换算（本车实测值，见 docs/陀螺仪与编码器.md） ----------------
