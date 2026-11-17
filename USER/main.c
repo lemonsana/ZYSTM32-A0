@@ -40,7 +40,7 @@
  *      5. 循迹可选的航向辅助（GRAY_GYRO_ASSIST，默认关）见 IRSEARCH.h。
  * ========================================================================== */
 
-#define FIRMWARE_VER    "V6.0"
+#define FIRMWARE_VER    "V6.1"
 
 int main(void)
 {
