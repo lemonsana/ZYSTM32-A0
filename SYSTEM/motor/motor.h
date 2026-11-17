@@ -35,6 +35,24 @@
 /* PWM 定时器参数：72MHz / (0+1) / (7199+1) = 10kHz */
 #define MOTOR_PWM_ARR           7200    /* 自动重装值 + 1 */
 
+/* ==================== 速度闭环（R2 起默认开启） ====================
+ * 开环时 Motor_SetSpeed(40) 只是给 40% 占空比，两个电机个体差异能差 10~20%，
+ * 车直行必然画龙。开了闭环以后，Motor_SetSpeed() 里的数字变成"目标速度"，
+ * 由 MOTOR_LOOP_MS 周期的 PI 调节器根据编码器实测增量去修正占空比。
+ *
+ * 换算基准 MOTOR_CNT_PER_UNIT_X100：本车实测，50% 占空比悬空约 40 计数/10ms，
+ * 即 1% ≈ 0.8 计数/10ms，写成 x100 = 80。换底盘/换电机请重新量一次。
+ *
+ * 关闭：把 MOTOR_SPEED_LOOP 改 0，立刻回到纯开环（行为与 V6.2 完全一致）。
+ * ================================================================== */
+#define MOTOR_SPEED_LOOP        1       /* 1=速度闭环  0=纯开环 */
+#define MOTOR_LOOP_MS           10      /* 闭环周期，必须等于 ENC_TICK_MS */
+#define MOTOR_CNT_PER_UNIT_X100 80      /* 每 1% 占空比每 10ms 的计数 x100 */
+#define MOTOR_LOOP_KP           60      /* 比例：每差 1 个计数，修正 0.6% 占空比 */
+#define MOTOR_LOOP_KI           10      /* 积分：消灭稳态误差（电池掉压时靠它补） */
+#define MOTOR_LOOP_I_LIMIT      4000    /* 积分限幅，防止绕死 */
+#define MOTOR_LOOP_TRIM_MAX     40      /* 单次修正上限（占空比 %），防突变 */
+
 /* ------------------------- 非阻塞接口（推荐） ------------------------- */
 /* 设置左右轮速度，范围 -100 ~ +100（百分比），正数前进。
  * 只写寄存器，立即返回。 */
@@ -44,6 +62,13 @@ void Motor_Init(void);
 
 int  Motor_GetLeft(void);           /* 当前设定速度（调试打印用） */
 int  Motor_GetRight(void);
+
+/* 速度闭环：每 MOTOR_LOOP_MS 调一次（main.c 已注册进 sched 后台） */
+void Motor_SpeedLoopTask(void);
+int  Motor_GetPwmLeft(void);        /* 闭环实际输出的占空比（调试用） */
+int  Motor_GetPwmRight(void);
+int  Motor_GetTgtLeft(void);        /* 上层要求的目标速度 */
+int  Motor_GetTgtRight(void);
 
 /* --------------------- 兼容原厂接口（语义与 v1.0 完全一致） ---------------------
  * SetMotorSpeed(ch, speed)：

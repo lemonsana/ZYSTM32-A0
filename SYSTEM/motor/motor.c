@@ -1,6 +1,7 @@
 ﻿#include "motor.h"
 #include "delay.h"
 #include <stdlib.h>     /* abs() */
+#include "encoder.h"    /* 速度闭环要读编码器增量 */
 
 /* ------------------------------------------------------------------
  * v3.0 电机驱动
@@ -98,11 +99,104 @@ static void Motor_SetOne(unsigned char ch, int speed)
     }
 }
 
-/* 设置双轮速度（正数前进）。这是所有上层模块唯一的速度出口 */
+/* ==================== 速度闭环（PI） ==================== */
+#if MOTOR_SPEED_LOOP
+static int motor_tgt_l = 0;     /* 上层目标 */
+static int motor_tgt_r = 0;
+static int motor_pwm_l = 0;     /* 闭环实际输出 */
+static int motor_pwm_r = 0;
+static int motor_i_l    = 0;    /* 积分累加 */
+static int motor_i_r    = 0;
+
+int Motor_GetPwmLeft(void)  { return motor_pwm_l; }
+int Motor_GetPwmRight(void) { return motor_pwm_r; }
+int Motor_GetTgtLeft(void)  { return motor_tgt_l; }
+int Motor_GetTgtRight(void) { return motor_tgt_r; }
+
+/* 目标速度(%) → 每 10ms 期望计数 */
+static int Motor_CntTarget(int speed)
+{
+    return (speed * MOTOR_CNT_PER_UNIT_X100) / 100;
+}
+
+/* 单轮 PI：返回应输出的占空比 */
+static int Motor_PiOut(int target, int actual, int *integ)
+{
+    int expect;
+    int err;
+    int trim;
+    int out;
+
+    if (target == 0)                /* 目标 0 立刻停，积分清零 */
+    {
+        *integ = 0;
+        return 0;
+    }
+
+    expect = Motor_CntTarget(target);
+    err    = expect - actual;       /* 转太慢 → err>0 → 加大占空比 */
+
+    *integ += err;
+    if (*integ >  MOTOR_LOOP_I_LIMIT) *integ =  MOTOR_LOOP_I_LIMIT;
+    if (*integ < -MOTOR_LOOP_I_LIMIT) *integ = -MOTOR_LOOP_I_LIMIT;
+
+    trim = (MOTOR_LOOP_KP * err + MOTOR_LOOP_KI * (*integ)) / 100;
+    if (trim >  MOTOR_LOOP_TRIM_MAX) trim =  MOTOR_LOOP_TRIM_MAX;
+    if (trim < -MOTOR_LOOP_TRIM_MAX) trim = -MOTOR_LOOP_TRIM_MAX;
+
+    out = target + trim;
+    if (target > 0)                 /* 前进不反向：最低 0 */
+    {
+        if (out < 0)   out = 0;
+        if (out > 100) out = 100;
+    }
+    else                            /* 后退同理 */
+    {
+        if (out > 0)    out = 0;
+        if (out < -100) out = -100;
+    }
+    return out;
+}
+
+/* 每 MOTOR_LOOP_MS 调一次：读实测增量，算出占空比，写下去 */
+void Motor_SpeedLoopTask(void)
+{
+    int dl = (int)Encoder_GetDeltaL();
+    int dr = (int)Encoder_GetDeltaR();
+
+    motor_pwm_l = Motor_PiOut(motor_tgt_l, dl, &motor_i_l);
+    motor_pwm_r = Motor_PiOut(motor_tgt_r, dr, &motor_i_r);
+
+    Motor_SetOne(0, motor_pwm_l);
+    Motor_SetOne(1, motor_pwm_r);
+}
+#endif /* MOTOR_SPEED_LOOP */
+
+/* 设置双轮速度（正数前进）。这是所有上层模块唯一的速度出口。
+ * 闭环开启时：只记目标，真正的占空比由 Motor_SpeedLoopTask() 每 10ms 输出。
+ * 目标为 0 的那一侧立即断电停车（不等下一拍）。 */
 void Motor_SetSpeed(int left, int right)
 {
+#if MOTOR_SPEED_LOOP
+    motor_tgt_l = Motor_Clamp(left);
+    motor_tgt_r = Motor_Clamp(right);
+
+    if (motor_tgt_l == 0)
+    {
+        motor_i_l   = 0;
+        motor_pwm_l = 0;
+        Motor_SetOne(0, 0);
+    }
+    if (motor_tgt_r == 0)
+    {
+        motor_i_r   = 0;
+        motor_pwm_r = 0;
+        Motor_SetOne(1, 0);
+    }
+#else
     Motor_SetOne(0, left);
     Motor_SetOne(1, right);
+#endif
 }
 
 /* 停车 */

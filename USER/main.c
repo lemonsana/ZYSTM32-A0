@@ -40,7 +40,7 @@
  *      5. 循迹可选的航向辅助（GRAY_GYRO_ASSIST，默认关）见 IRSEARCH.h。
  * ========================================================================== */
 
-#define FIRMWARE_VER    "V6.2"
+#define FIRMWARE_VER    "R2"
 
 int main(void)
 {
@@ -52,7 +52,7 @@ int main(void)
     Remote_Init();              /* 红外遥控 PA1（当前未注册成任务） */
 
     Gyro_Init();                /* MPU6050 软件 I2C：PC0=SCL / PC1=SDA（车必须静止） */
-    Encoder_Init();             /* 编码器：PC6/PC7=TIM8 硬件，PC8/PC9=EXTI8/9 软件 */
+    Encoder_Init();             /* 编码器：左 PA0/PA2=EXTI0/2，右 PA7/PA8=EXTI7/8（P2 排针） */
 
 #if DEBUG_UART
     uart_init(115200);          /* USART1 PA9/PA10 → 板载 CH340G → USB */
@@ -72,9 +72,10 @@ int main(void)
 
     Sched_Register(app_mode_key_task, 5);               /* 前台：按键扫描 */
     Sched_RegisterDeferred(app_mode_task, MODE_TASK_MS);/* 后台：串口 + 模式推进 */
-    Sched_RegisterDeferred(app_mode_debug_task, 200);   /* 后台：调试打印 */
+    Sched_RegisterDeferred(app_mode_debug_task, 500);   /* 后台：调试打印（500ms，降 CPU 占用） */
     Sched_RegisterDeferred(Gyro_Task, GYRO_SAMPLE_MS);  /* 后台：陀螺仪采样 + 积分 */
     Sched_RegisterDeferred(Encoder_Task, ENC_TICK_MS);  /* 后台：编码器增量 */
+    Sched_RegisterDeferred(Motor_SpeedLoopTask, MOTOR_LOOP_MS); /* 后台：速度闭环 PI */
 
     app_mode_init();
     app_mode_start(0);                                  /* 上电默认模式1（综合） */

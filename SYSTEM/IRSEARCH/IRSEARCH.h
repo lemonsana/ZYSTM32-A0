@@ -195,7 +195,7 @@
  *      GRAY_GYRO_REF_ERR 误差小于它时，把航向基准按 1/REF_LEAK 往当前朝向泄放，
  *      GRAY_GYRO_REF_LEAK 用来吸收 MPU6050 的零偏温漂（约 1~3°/分钟）
  * ============================================================================ */
-#define GRAY_GYRO_ASSIST       0
+#define GRAY_GYRO_ASSIST       1     /* R2 起默认开启（陀螺仪已实测可用） */
 #define GRAY_GYRO_KP          20
 #define GRAY_GYRO_MAX         15
 #define GRAY_GYRO_GATE        25
